@@ -61,6 +61,18 @@ def _eval_condition(cond, p):
     return None
 
 
+def _cond_value(cond, p):
+    """条件当前值（用于展示）。"""
+    field = cond["field"]
+    if field == "月销售额(万元)":
+        revenue = _num(p.get("营业收入(万元)"))
+        return f"{revenue/12:.1f}" if revenue is not None else "缺失"
+    raw = p.get(field)
+    if raw is None or (isinstance(raw, str) and raw.strip() == ""):
+        return "缺失"
+    return str(raw)
+
+
 def match_cards(profile, cards=None):
     """按企业指标匹配政策卡片。
 
@@ -85,6 +97,7 @@ def match_cards(profile, cards=None):
         matched = 0
         unknown = 0
         detail = []
+        cond_results = []
         for cond in conditions:
             r = _eval_condition(cond, p)
             if r is True:
@@ -95,6 +108,11 @@ def match_cards(profile, cards=None):
             else:
                 unknown += 1
                 detail.append(f"{cond['field']} ?（数据缺失）")
+            cond_results.append({
+                "field": cond["field"],
+                "pass": r,
+                "value": _cond_value(cond, p),
+            })
         if unknown and matched + 0 == 0:
             status = "需人工确认"
         elif matched == len(conditions):
@@ -110,6 +128,7 @@ def match_cards(profile, cards=None):
             "doc_number": card.get("doc_number", ""),
             "benefit": card.get("benefit", ""),
             "detail": "；".join(detail),
+            "conditions": cond_results,
         })
     return results
 

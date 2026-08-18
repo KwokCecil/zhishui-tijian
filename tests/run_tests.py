@@ -180,9 +180,22 @@ def test_13_missing_data_no_guess():
 
 
 def test_14_score_boundaries():
-    assert scoring.risk_score([]) == (100, "低风险")
-    assert scoring.risk_score([{"level": "高"} for _ in range(7)]) == (79, "中风险")
-    assert scoring.risk_score([{"level": "高"} for _ in range(14)]) == (58, "高风险")
+    score, level = scoring.risk_score([])
+    assert score == 100 and level == "低风险"
+    # 1 条高危 → 中风险（得分只反映加权，等级按严重程度升级）
+    s1, l1 = scoring.risk_score([{"level": "高"}])
+    assert l1 == "中风险" and s1 == 97
+    # 高危 + 中危 → 高风险
+    assert scoring.risk_level([{"level": "高"}, {"level": "中"}]) == "高风险"
+    # ≥2 条中危 → 中风险
+    assert scoring.risk_level([{"level": "中"}, {"level": "中"}]) == "中风险"
+    # 关键预警组合 R17+R19+R35 → 高风险
+    combo = [
+        {"level": "低", "rule_id": "R17"},
+        {"level": "中", "rule_id": "R19"},
+        {"level": "中", "rule_id": "R35"},
+    ]
+    assert scoring.risk_level(combo) == "高风险"
 
 
 def test_15_report_traceable():
@@ -288,7 +301,7 @@ def test_27_health_check_tool():
         "contracts": scenario["contracts"],
     })
     assert len(r["hits"]) >= 5, r
-    assert r["summary"]["level"] == "中风险", r["summary"]
+    assert r["summary"]["level"] == "高风险", r["summary"]
     assert r["summary"]["top3"], r["summary"]
 
 
@@ -297,6 +310,7 @@ def test_28_policy_tool():
     r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
     assert len(r) == 8, r
     assert all(m["doc_number"] for m in r), r
+    assert all("conditions" in m and m["conditions"] for m in r), r
 
 
 def test_29_small_micro_tool():
@@ -346,6 +360,20 @@ def test_33_offline_agent_loop():
     assert any(t["tool"] == "check_small_micro" for t in r3["trace"]), r3
 
 
+def test_34_case1_level_high():
+    data = generate_data.build_scenario("case1")
+    hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
+    summary = scoring.risk_summary(hits)
+    assert summary["level"] == "高风险", summary
+
+
+def test_35_case6_level_high():
+    data = generate_data.build_scenario("case6")
+    hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
+    summary = scoring.risk_summary(hits)
+    assert summary["level"] == "高风险", summary
+
+
 def main():
     case(1, "税负率明显低于行业参考区间 → R12 高", test_01_tax_burden_low)
     case(2, "销项软件、进项全餐饮 → R04", test_02_input_output_mismatch)
@@ -373,13 +401,15 @@ def main():
     case(24, "收购对象身份存疑+单户巨大 → R36+R37+代开路径", test_24_agricultural_purchase_risk)
     case(25, "上游走逃 → 异常凭证处理路径提示", test_25_abnormal_invoice_path)
     case(26, "工具层 schema 完整（名称/描述/参数）", test_26_tool_schemas_valid)
-    case(27, "run_tax_health_check 工具（risk→中风险）", test_27_health_check_tool)
+    case(27, "run_tax_health_check 工具（risk→高风险）", test_27_health_check_tool)
     case(28, "match_policy_cards 工具（8张卡带文号）", test_28_policy_tool)
     case(29, "check_small_micro 工具（案例一符合）", test_29_small_micro_tool)
     case(30, "answer_policy_question 工具（引导12366）", test_30_policy_question_tool)
     case(31, "get_demo_scenario 未知场景返回错误", test_31_scenario_tool_unknown)
     case(32, "generate_report 离线报告含体检得分", test_32_report_tool_offline)
     case(33, "离线 Agent 对话循环（风险/政策/小微）", test_33_offline_agent_loop)
+    case(34, "案例一等级：高风险（组合升级）", test_34_case1_level_high)
+    case(35, "案例六等级：高风险（高危+中危）", test_35_case6_level_high)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)
