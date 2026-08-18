@@ -1,44 +1,101 @@
 # -*- coding: utf-8 -*-
-"""风险评分（演示版）。
+"""风险指数（演示版，0-100，越高越危险）。
 
-体检得分：100 - 命中加权分（高=3 / 中=2 / 低或提示=1），仅作参考量。
-风险等级：由命中特征的严重程度直接判定，不只看总分——
-  - 高风险：≥2 条高危特征；或 高危+中危 同时命中；或触发关键预警组合（R17+R19+R35 全中）
-  - 中风险：1 条高危特征；或 ≥2 条中危特征；或 中危+提示 组合
-  - 低风险：其余
-权重与等级口径均为演示值，报告和页面需标注。
+基础分：高危 20 分/条、中危 10 分/条、低危/提示 3 分/条。
+组合加成（可叠加，封顶 100）：
+  - 命中 R17+R19+R35 关键预警组合：+30
+  - 高危特征 ≥2 条：+25
+  - 高危 + 中危同时存在：+20
+  - 仅 1 条高危：+10
+  - 中危 ≥2 条：+8
+  - 中危 + 提示：+7
+等级由指数直接推导：≥50 高风险；20-49 中风险；<20 低风险。
+口径均为演示值，报告和页面需标注。
 """
 
-LEVEL_WEIGHT = {"高": 3, "中": 2, "低": 1, "提示": 1}
+RISK_POINTS = {"高": 20, "中": 10, "低": 3, "提示": 3}
 LEVEL_RANK = {"高": 3, "中": 2, "低": 1, "提示": 1}
 
 
-def risk_score(hits):
-    """返回 (体检得分, 等级)。"""
-    weighted = sum(LEVEL_WEIGHT.get(h.get("level", "低"), 1) for h in hits)
-    score = max(0, 100 - weighted)
-    return score, risk_level(hits)
-
-
-def risk_level(hits):
-    """按命中特征的严重程度判定等级（体检得分的补充规则）。"""
+def _bonuses(hits):
+    """组合加成：返回 [(名称, 加分)]，用于展示和计算。"""
     high = [h for h in hits if h.get("level") == "高"]
     mid = [h for h in hits if h.get("level") == "中"]
     low = [h for h in hits if h.get("level") in ("低", "提示")]
     ids = {h.get("rule_id") for h in hits}
-    combo_case1 = {"R17", "R19", "R35"}.issubset(ids)
-    if len(high) >= 2 or (high and mid) or combo_case1:
+    bonuses = []
+    if {"R17", "R19", "R35"}.issubset(ids):
+        bonuses.append(("关键预警组合 R17+R19+R35", 30))
+    if len(high) >= 2:
+        bonuses.append((f"高危特征≥2条（{len(high)}条）", 25))
+    if high and mid:
+        bonuses.append(("高危+中危同时存在", 20))
+    elif len(high) == 1:
+        bonuses.append(("仅1条高危特征", 10))
+    if len(mid) >= 2:
+        bonuses.append((f"中危特征≥2条（{len(mid)}条）", 8))
+    if mid and low and len(mid) < 2:
+        bonuses.append(("中危+提示组合", 7))
+    return bonuses
+
+
+def risk_index(hits):
+    """返回 (基础分, 组合加成列表, 风险指数)。"""
+    base = sum(RISK_POINTS.get(h.get("level", "低"), 3) for h in hits)
+    bonuses = _bonuses(hits)
+    total = min(100, base + sum(b for _, b in bonuses))
+    return base, bonuses, total
+
+
+def risk_score(hits):
+    """兼容接口：返回 (风险指数, 等级)。"""
+    base, bonuses, total = risk_index(hits)
+    return total, risk_level(hits)
+
+
+def risk_level(hits):
+    """等级由风险指数直接推导，与指数完全一致。"""
+    total = risk_index(hits)[2]
+    if total >= 50:
         return "高风险"
-    if high or len(mid) >= 2 or (mid and low):
+    if total >= 20:
         return "中风险"
     return "低风险"
+
+
+def level_reason(hits):
+    """指数构成说明（用于页面展示）。"""
+    base, bonuses, total = risk_index(hits)
+    parts = [f"基础分 {base}"]
+    parts += [f"{name}(+{b})" for name, b in bonuses]
+    return "，".join(parts) + f" → {total}/100"
+
+
+def score_breakdown(hits):
+    """指数明细：每条命中的点数、基础分、加成与最终指数。"""
+    rows = []
+    for h in hits:
+        level = h.get("level", "低")
+        rows.append({
+            "rule_id": h.get("rule_id", ""),
+            "name": h.get("name", ""),
+            "level": level,
+            "points": RISK_POINTS.get(level, 3),
+        })
+    base, bonuses, total = risk_index(hits)
+    return {
+        "rows": rows,
+        "base": base,
+        "bonuses": bonuses,
+        "total": total,
+    }
 
 
 def top_risks(hits, n=3):
     """监管视角 Top3：级别高优先，同级别按权重降序。"""
     ranked = sorted(
         hits,
-        key=lambda h: (LEVEL_RANK.get(h.get("level", "低"), 1), LEVEL_WEIGHT.get(h.get("level", "低"), 1)),
+        key=lambda h: (LEVEL_RANK.get(h.get("level", "低"), 1), RISK_POINTS.get(h.get("level", "低"), 3)),
         reverse=True,
     )
     return ranked[:n]
@@ -56,4 +113,6 @@ def risk_summary(hits):
         "hit_count": len(hits),
         "by_level": by_level,
         "top3": top_risks(hits),
+        "level_reason": level_reason(hits),
+        "breakdown": score_breakdown(hits),
     }

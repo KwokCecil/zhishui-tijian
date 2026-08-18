@@ -37,26 +37,35 @@ st.markdown(
       h2 {font-size: 1.4rem; margin-top: 1.6rem;}
       h3 {font-size: 1.15rem;}
       .stMarkdown p {font-size: 1rem; line-height: 1.65;}
+      [data-testid="stCaptionContainer"] p {font-size: .95rem; color: #475569;}
+      [data-testid="stExpander"] details summary {font-size: 1rem;}
+      [data-testid="stDataFrame"] {font-size: 1rem;}
+      [data-testid="stDataFrame"] td {padding: 8px 10px !important;}
       .metric-row {display: flex; gap: .8rem; flex-wrap: wrap; margin: .4rem 0 1rem;}
       .metric-card {flex: 1; min-width: 150px; background: #ffffff;
                     border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px 18px;}
       .metric-label {font-size: .95rem; color: #334155; font-weight: 600;}
       .metric-value {font-size: 2rem; font-weight: 700; margin-top: 3px; line-height: 1.2; color: #0f172a;}
-      .metric-sub {font-size: .88rem; color: #64748b; margin-top: 3px;}
+      .metric-sub {font-size: .9rem; color: #475569; margin-top: 3px;}
       .lvl-low {color: #15803d;} .lvl-mid {color: #b45309;} .lvl-high {color: #b91c1c;}
       .status-badge {display: inline-block; padding: 2px 10px; border-radius: 999px;
-                     font-size: .85rem; font-weight: 700; margin-right: 6px;}
+                     font-size: .9rem; font-weight: 700; margin-right: 6px;}
       .badge-ok {background: #dcfce7; color: #15803d;}
       .badge-warn {background: #fef3c7; color: #b45309;}
       .badge-no {background: #fee2e2; color: #b91c1c;}
+      .badge-high {background: #fee2e2; color: #b91c1c;}
+      .badge-mid {background: #fef3c7; color: #b45309;}
+      .badge-low {background: #dcfce7; color: #15803d;}
       .scenario-box {background: #f0f7ff; border: 1px solid #dbeafe; border-radius: 12px;
                      padding: 14px 18px; margin: .4rem 0 1rem; font-size: 1rem;
                      line-height: 1.7; color: #0f172a;}
       .scenario-box b {color: #1d4ed8;}
       .policy-row {border: 1px solid #cbd5e1; background: #ffffff; border-radius: 10px;
                    padding: 12px 16px; margin-bottom: 10px; color: #0f172a; line-height: 1.7;}
-      .policy-row .cond {font-size: .95rem; color: #334155;}
-      .policy-row .note {font-size: .9rem; color: #92400e;}
+      .hit-row {border: 1px solid #cbd5e1; background: #ffffff; border-radius: 10px;
+                padding: 12px 16px; margin-bottom: 10px; color: #0f172a; line-height: 1.7;}
+      .cond {font-size: 1rem; color: #334155;}
+      .note {font-size: .95rem; color: #92400e;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -127,6 +136,11 @@ def profile_summary(profile):
 def status_badge(status):
     cls = {"可享受": "badge-ok", "需人工确认": "badge-warn", "不适用": "badge-no"}.get(status, "badge-no")
     return f'<span class="status-badge {cls}">{status}</span>'
+
+
+def level_badge(level):
+    cls = {"高": "badge-high", "中": "badge-mid", "低": "badge-low", "提示": "badge-low"}.get(level, "badge-mid")
+    return f'<span class="status-badge {cls}">{level}</span>'
 
 
 def level_class(level):
@@ -230,14 +244,14 @@ st.markdown(
     f"""
     <div class="metric-row">
       <div class="metric-card">
-        <div class="metric-label">体检得分</div>
+        <div class="metric-label">风险指数</div>
         <div class="metric-value">{summary['score']}<span style="font-size:1rem;color:#94a3b8"> /100</span></div>
-        <div class="metric-sub">健康分（命中加权后）</div>
+        <div class="metric-sub">0-100，越高越危险</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">风险等级</div>
         <div class="metric-value {lvl_cls}">{summary['level']}</div>
-        <div class="metric-sub">高危特征直接升级等级</div>
+        <div class="metric-sub">{summary['level_reason']}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">命中特征</div>
@@ -254,6 +268,33 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+with st.expander("风险指数和风险等级是怎么算的"):
+    bd = summary["breakdown"]
+    bonus_text = "；".join(f"{name}(+{b})" for name, b in bd["bonuses"]) or "无"
+    st.markdown(
+        "**风险指数** = 基础分 + 组合加成（封顶 100）。\n\n"
+        "基础分：高危 20 分/条、中危 10 分/条、低危/提示 3 分/条。\n"
+        "组合加成：R17+R19+R35 关键预警组合 +30；高危≥2条 +25；高危+中危 +20；"
+        "仅1条高危 +10；中危≥2条 +8；中危+提示 +7。\n\n"
+        f"本次命中 {len(bd['rows'])} 条，基础分 {bd['base']}；组合加成：{bonus_text}；"
+        f"合计 = **{bd['total']} / 100**。"
+    )
+    if bd["rows"]:
+        bd_df = pd.DataFrame([{
+            "特征ID": r["rule_id"],
+            "特征名称": r["name"],
+            "级别": r["level"],
+            "点数": r["points"],
+        } for r in bd["rows"]])
+        st.dataframe(bd_df, width="stretch", hide_index=True)
+    st.markdown(
+        "**风险等级**由指数直接推导：\n\n"
+        "- 高风险：指数 ≥ 50\n"
+        "- 中风险：20-49\n"
+        "- 低风险：< 20\n\n"
+        f"本次指数构成：**{summary['level_reason']}**"
+    )
+
 # ---- 监管视角 Top3 ----
 st.subheader("监管视角 Top3")
 if summary["top3"]:
@@ -265,23 +306,24 @@ else:
 # ---- 命中特征明细 ----
 st.subheader("命中特征明细")
 if hits:
-    hits_df = pd.DataFrame([{
-        "特征ID": h["rule_id"],
-        "特征名称": h["name"],
-        "级别": h["level"],
-        "命中证据": h["evidence"],
-        "行动建议": h["suggestion"],
-    } for h in hits])
-    st.dataframe(hits_df, width="stretch", hide_index=True)
+    for h in hits:
+        st.markdown(
+            f'<div class="hit-row">{level_badge(h["level"])}'
+            f'<b>{h["rule_id"]} {h["name"]}</b><br>'
+            f'<span class="cond">📌 证据：{h["evidence"]}</span><br>'
+            f'<span class="cond">💡 建议：{h["suggestion"]}</span></div>',
+            unsafe_allow_html=True,
+        )
 else:
     st.success("未命中风险特征。")
 
 # ---- 优惠政策清单 ----
 st.subheader("优惠政策清单")
-with st.expander("状态说明：可享受 / 需人工确认 / 不适用"):
-    st.markdown("**可享受**：系统规则判定条件全部满足（演示口径），实际申报时仍需企业确认。")
-    st.markdown("**需人工确认**：条件基本满足，但需要核对资质、证明材料或官方名单（如高企资格、研发真实性），系统不做最终判断。")
-    st.markdown("**不适用**：明确不满足条件，不列入可关注政策。")
+st.markdown(
+    "状态说明：**可享受**＝条件全部满足（演示口径，申报时仍需企业确认）；"
+    "**需人工确认**＝条件基本满足，但需核对资质/证明材料/官方名单，系统不做最终判断；"
+    "**不适用**＝明确不满足条件。"
+)
 usable = [m for m in matched if m["status"] != "不适用"]
 not_usable = [m for m in matched if m["status"] == "不适用"]
 if usable:
@@ -310,28 +352,6 @@ if not_usable:
     with st.expander(f"不适用政策（{len(not_usable)} 条）"):
         for m in not_usable:
             st.markdown(f"- {m['title']}（{m['doc_number']}）：{m['detail']}")
-
-# ---- 政策符合性逐项判定 ----
-st.subheader("政策符合性判定（逐项）")
-for m in matched:
-    with st.expander(f"{m['policy_id']} {m['title']}｜{m['status']}"):
-        st.markdown(f"**文号**：{m['doc_number']}")
-        st.markdown(f"**优惠内容**：{m['benefit']}")
-        if m.get("note"):
-            st.warning(m["note"])
-        if m.get("conditions"):
-            for c in m["conditions"]:
-                if c["pass"] is True:
-                    mark = "✅"
-                elif c["pass"] is False:
-                    mark = "❌"
-                else:
-                    mark = "❓"
-                st.markdown(
-                    f"{mark} **{c['field']}**：当前 {c['value']}（要求 {c['requirement']}）"
-                )
-        else:
-            st.markdown("该政策需人工核对资格材料。")
 
 # ---- 行动建议 ----
 st.subheader("行动建议")

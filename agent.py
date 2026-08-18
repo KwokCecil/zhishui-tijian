@@ -90,7 +90,7 @@ def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, co
         })
         trace.append({"tool": "run_tax_health_check", "arguments": "{}", "ok": True, "result": r})
         s = r["summary"]
-        lines = [f"体检得分 {s['score']}/100，等级：{s['level']}，命中 {s['hit_count']} 条特征。"]
+        lines = [f"风险指数 {s['score']}/100（越高越危险），等级：{s['level']}，命中 {s['hit_count']} 条特征。"]
         for t in s["top3"]:
             lines.append(f"- {t['rule_id']} [{t['level']}] {t['name']}：{t['evidence']}")
         answer += ("\n\n" if answer else "") + "\n".join(lines)
@@ -98,7 +98,7 @@ def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, co
     if not answer:
         r = tools.execute_tool("generate_report", {
             "hits": [],
-            "summary": {"score": 100, "level": "低风险", "hit_count": 0, "by_level": {}, "top3": []},
+            "summary": {"score": 0, "level": "低风险", "hit_count": 0, "by_level": {}, "top3": []},
             "matched": [],
         })
         trace.append({"tool": "generate_report", "arguments": "{}", "ok": True, "result": r})

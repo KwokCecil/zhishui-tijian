@@ -180,7 +180,7 @@ def get_demo_scenario(name):
 def _default_report(hits, summary, matched):
     lines = [
         f"# 智税体检报告（离线模板）\n",
-        f"**体检得分：{summary['score']} / 100｜风险等级：{summary['level']}｜命中特征：{summary['hit_count']} 条**\n",
+        f"**风险指数：{summary['score']} / 100（越高越危险）｜风险等级：{summary['level']}｜命中特征：{summary['hit_count']} 条**\n",
     ]
     if summary["top3"]:
         lines.append("## 监管视角 Top3\n")
