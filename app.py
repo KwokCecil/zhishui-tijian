@@ -21,8 +21,12 @@ st.set_page_config(page_title="智税体检 Demo", page_icon="🩺", layout="wid
 
 # Streamlit secrets 兜底：页面内配置的 key 也能生效
 for secret_key in ("ZHI_SHUI_LLM_API_KEY", "ZHI_SHUI_LLM_BASE_URL", "ZHI_SHUI_LLM_MODEL"):
-    if not os.environ.get(secret_key) and secret_key in st.secrets:
-        os.environ[secret_key] = str(st.secrets[secret_key])
+    if not os.environ.get(secret_key):
+        try:
+            if secret_key in st.secrets:
+                os.environ[secret_key] = str(st.secrets[secret_key])
+        except Exception:
+            pass  # 没有 secrets.toml 时跳过，不影响运行
 
 st.title("🩺 智税体检（演示版）")
 st.caption("模拟'金税四期视角'的企业税务健康检查：上传/生成模拟数据 → 风险画像 + 优惠政策清单 + 行动建议")
@@ -123,7 +127,7 @@ if hits:
         "命中证据": h["evidence"],
         "行动建议": h["suggestion"],
     } for h in hits])
-    st.dataframe(hits_df, use_container_width=True, hide_index=True)
+    st.dataframe(hits_df, width="stretch", hide_index=True)
 else:
     st.success("未命中风险特征。")
 
@@ -136,7 +140,7 @@ matched_df = pd.DataFrame([{
     "优惠内容": m["benefit"],
     "判定明细": m["detail"],
 } for m in matched])
-st.dataframe(matched_df, use_container_width=True, hide_index=True)
+st.dataframe(matched_df, width="stretch", hide_index=True)
 
 with st.expander("小型微利企业条件逐项判定（P01）"):
     for c in sm["checks"]:
