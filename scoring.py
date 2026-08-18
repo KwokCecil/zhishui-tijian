@@ -1,42 +1,22 @@
 # -*- coding: utf-8 -*-
 """风险指数（演示版，0-100，越高越危险）。
 
-基础分：高危 20 分/条、中危 10 分/条、低危/提示 3 分/条。
-组合加成（可叠加，封顶 100）：
-  - 命中 R17+R19+R35 关键预警组合：+30
-  - 高危特征 ≥2 条：+25
-  - 高危 + 中危同时存在：+20
-  - 仅 1 条高危：+10
-  - 中危 ≥2 条：+8
-  - 中危 + 提示：+7
-等级由指数直接推导：≥50 高风险；20-49 中风险；<20 低风险。
+基础分：高危 45 分/条、中危 20 分/条、低危/提示 5 分/条。
+组合加成仅一条：命中 R17+R19+R35 关键预警组合 +25（两条低/中危也能构成严重风险）。
+等级由指数直接推导：≥60 高风险；20-59 中风险；<20 低风险。
 口径均为演示值，报告和页面需标注。
 """
 
-RISK_POINTS = {"高": 20, "中": 10, "低": 3, "提示": 3}
+RISK_POINTS = {"高": 45, "中": 20, "低": 5, "提示": 5}
 LEVEL_RANK = {"高": 3, "中": 2, "低": 1, "提示": 1}
 
 
 def _bonuses(hits):
-    """组合加成：返回 [(名称, 加分)]，用于展示和计算。"""
-    high = [h for h in hits if h.get("level") == "高"]
-    mid = [h for h in hits if h.get("level") == "中"]
-    low = [h for h in hits if h.get("level") in ("低", "提示")]
+    """组合加成：仅 R17+R19+R35 关键预警组合。"""
     ids = {h.get("rule_id") for h in hits}
-    bonuses = []
     if {"R17", "R19", "R35"}.issubset(ids):
-        bonuses.append(("关键预警组合 R17+R19+R35", 30))
-    if len(high) >= 2:
-        bonuses.append((f"高危特征≥2条（{len(high)}条）", 25))
-    if high and mid:
-        bonuses.append(("高危+中危同时存在", 20))
-    elif len(high) == 1:
-        bonuses.append(("仅1条高危特征", 10))
-    if len(mid) >= 2:
-        bonuses.append((f"中危特征≥2条（{len(mid)}条）", 8))
-    if mid and low and len(mid) < 2:
-        bonuses.append(("中危+提示组合", 7))
-    return bonuses
+        return [("关键预警组合 R17+R19+R35", 25)]
+    return []
 
 
 def risk_index(hits):
@@ -56,7 +36,7 @@ def risk_score(hits):
 def risk_level(hits):
     """等级由风险指数直接推导，与指数完全一致。"""
     total = risk_index(hits)[2]
-    if total >= 50:
+    if total >= 60:
         return "高风险"
     if total >= 20:
         return "中风险"
