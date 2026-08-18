@@ -1,0 +1,144 @@
+[
+  {
+    "policy_id": "P01",
+    "title": "小型微利企业低税率",
+    "doc_number": "财政部 税务总局公告2023年第12号",
+    "tax_type": "企业所得税",
+    "object_type": "小型微利企业",
+    "tags": ["企业所得税", "小微", "优惠"],
+    "conditions": [
+      {"field": "从业人数", "op": "<=", "value": 300, "unit": "人"},
+      {"field": "资产总额(万元)", "op": "<=", "value": 5000, "unit": "万元"},
+      {"field": "应纳税所得额(万元)", "op": "<=", "value": 300, "unit": "万元"}
+    ],
+    "benefit": "减按25%计入应纳税所得额，按20%税率缴纳（实际税负5%）",
+    "validity": {"effective_date": "2023-01-01", "expiry_date": "2027-12-31", "status": "现行"},
+    "source_url": "国家税务总局税收政策库",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "可规则",
+    "case": "案例一：光伏产业链设备企业应税所得292.7万，距限额仅7.3万"
+  },
+  {
+    "policy_id": "P02",
+    "title": "高新技术企业减按15%",
+    "doc_number": "企业所得税法第28条（认定办法文号待核）",
+    "tax_type": "企业所得税",
+    "object_type": "高新技术企业",
+    "tags": ["企业所得税", "高新", "优惠"],
+    "conditions": [
+      {"field": "是否高新技术企业", "op": "==", "value": "是"}
+    ],
+    "benefit": "减按15%征收企业所得税（需在有效资质期内）",
+    "validity": {"effective_date": "", "expiry_date": "", "status": "资质期内有效"},
+    "source_url": "科技部/财政部/税务总局认定办法",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "部分规则",
+    "case": "案例五：资格认定权（科技部门）与优惠享受权（税务）分离"
+  },
+  {
+    "policy_id": "P03",
+    "title": "研发费用加计扣除100%",
+    "doc_number": "财政部 税务总局公告2023年第7号",
+    "tax_type": "企业所得税",
+    "object_type": "真实开展研发活动的企业",
+    "tags": ["企业所得税", "研发", "优惠"],
+    "conditions": [
+      {"field": "研发费用(万元)", "op": ">", "value": 0, "unit": "万元"},
+      {"field": "行业", "op": "not_in", "value": ["烟草制造业", "住宿和餐饮业", "批发和零售业", "房地产业", "租赁和商务服务业", "娱乐业"]}
+    ],
+    "benefit": "研发费用按实际发生额100%加计扣除",
+    "validity": {"effective_date": "2023-01-01", "expiry_date": "", "status": "现行"},
+    "source_url": "国家税务总局税收政策库",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "可规则+人工",
+    "case": "案例一：研发费用税前扣除600余万元，研发真实性核查"
+  },
+  {
+    "policy_id": "P04",
+    "title": "研发加计扣除负面清单行业",
+    "doc_number": "财税〔2015〕119号",
+    "tax_type": "企业所得税",
+    "object_type": "负面清单行业企业",
+    "tags": ["企业所得税", "研发", "负面清单"],
+    "conditions": [
+      {"field": "行业", "op": "in", "value": ["烟草制造业", "住宿和餐饮业", "批发和零售业", "房地产业", "租赁和商务服务业", "娱乐业"]}
+    ],
+    "benefit": "负面清单行业不得享受研发费用加计扣除",
+    "validity": {"effective_date": "", "expiry_date": "", "status": "现行"},
+    "source_url": "财税〔2015〕119号",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "可规则",
+    "case": ""
+  },
+  {
+    "policy_id": "P05",
+    "title": "软件产品增值税即征即退",
+    "doc_number": "财税〔2011〕100号",
+    "tax_type": "增值税",
+    "object_type": "销售自行开发软件产品的一般纳税人",
+    "tags": ["增值税", "软件", "即征即退"],
+    "conditions": [
+      {"field": "纳税人类型", "op": "==", "value": "一般纳税人"},
+      {"field": "行业", "op": "==", "value": "软件和信息技术服务业"},
+      {"field": "是否销售自研软件", "op": "==", "value": "是"}
+    ],
+    "benefit": "增值税实际税负超过3%的部分即征即退",
+    "validity": {"effective_date": "", "expiry_date": "", "status": "现行"},
+    "source_url": "财税〔2011〕100号",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "部分规则",
+    "case": "软件+税务 Demo 加分场景"
+  },
+  {
+    "policy_id": "P06",
+    "title": "小规模纳税人月销售额10万以下免征增值税",
+    "doc_number": "财政部 税务总局公告2023年第19号",
+    "tax_type": "增值税",
+    "object_type": "小规模纳税人",
+    "tags": ["增值税", "小规模", "免征"],
+    "conditions": [
+      {"field": "纳税人类型", "op": "==", "value": "小规模纳税人"},
+      {"field": "月销售额(万元)", "op": "<=", "value": 10, "unit": "万元"}
+    ],
+    "benefit": "月销售额10万元（含）以下免征增值税",
+    "validity": {"effective_date": "2023-01-01", "expiry_date": "2027-12-31", "status": "现行"},
+    "source_url": "国家税务总局税收政策库",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "可规则",
+    "case": ""
+  },
+  {
+    "policy_id": "P07",
+    "title": "小规模纳税人3%征收率减按1%",
+    "doc_number": "财政部 税务总局公告2023年第19号",
+    "tax_type": "增值税",
+    "object_type": "适用3%征收率的小规模纳税人",
+    "tags": ["增值税", "小规模", "减征"],
+    "conditions": [
+      {"field": "纳税人类型", "op": "==", "value": "小规模纳税人"}
+    ],
+    "benefit": "适用3%征收率的应税销售收入减按1%征收",
+    "validity": {"effective_date": "2023-01-01", "expiry_date": "2027-12-31", "status": "现行"},
+    "source_url": "国家税务总局税收政策库",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "可规则",
+    "case": ""
+  },
+  {
+    "policy_id": "P08",
+    "title": "六税两费减半征收",
+    "doc_number": "财政部 税务总局公告2023年第12号",
+    "tax_type": "六税两费",
+    "object_type": "小规模纳税人、小型微利企业、个体工商户",
+    "tags": ["六税两费", "减半"],
+    "conditions": [
+      {"field": "纳税人类型", "op": "in", "value": ["小规模纳税人", "小型微利企业", "个体工商户"]}
+    ],
+    "benefit": "资源税、城建税、房产税、城镇土地使用税、印花税、耕地占用税及两项附加减半征收",
+    "validity": {"effective_date": "2023-01-01", "expiry_date": "2027-12-31", "status": "现行"},
+    "source_url": "国家税务总局税收政策库",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "可规则",
+    "case": "案例一：风险处置+合规降负双轨"
+  }
+]
