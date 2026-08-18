@@ -320,17 +320,13 @@ if hits:
             f'<span class="status-badge badge-mid">组合规则</span>'
             if h.get("kind") == "combo" else ""
         )
-        legacy_tag = (
-            f'<span style="font-size:.85rem;color:#94a3b8">原编号 {h["legacy_id"]}</span>'
-            if h.get("legacy_id") else ""
-        )
         cat_tag = (
             f'<span style="font-size:.9rem;color:#64748b;margin-left:6px">[{h.get("category", "")}]</span>'
             if h.get("category") else ""
         )
         st.markdown(
             f'<div class="hit-row">{level_badge(h["level"])}'
-            f'<b>{h["rule_id"]} {h["name"]}</b>{combo_badge}{legacy_tag}{cat_tag}{merge_note}<br>'
+            f'<b>{h["rule_id"]} {h["name"]}</b>{combo_badge}{cat_tag}{merge_note}<br>'
             f'<span class="cond">📌 证据：{h["evidence"]}</span><br>'
             f'<span class="cond">💡 建议：{h["suggestion"]}</span></div>',
             unsafe_allow_html=True,

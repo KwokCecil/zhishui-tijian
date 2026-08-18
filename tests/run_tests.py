@@ -194,7 +194,7 @@ def test_14_score_boundaries():
     # 关键预警组合：5 + 20 + 20 + 25 = 70 → 高风险
     combo = [
         {"level": "低", "rule_id": "R17"},
-        {"level": "中", "rule_id": "R19"},
+        {"level": "中", "rule_id": "C01"},
         {"level": "中", "rule_id": "R35"},
     ]
     assert scoring.risk_level(combo) == "高风险"
@@ -448,7 +448,8 @@ def test_43_rule_metadata_category_order():
     assert rules.CATEGORY_OF["R01"] == "发票异常", rules.CATEGORY_OF
     assert rules.CATEGORY_OF["R39"] == "案例启发", rules.CATEGORY_OF
     assert rules.COMBO_RULES["C01"]["depends_on"] == ["R17", "R39"], rules.COMBO_RULES
-    assert rules.COMBO_RULES["C01"]["legacy_id"] == "R19", rules.COMBO_RULES
+    assert "legacy_id" not in rules.COMBO_RULES["C01"], rules.COMBO_RULES
+    assert "R19" not in rules.CATEGORY_OF, "R19 应已腾空，只保留 C01"
 
     order = [r[0] for r in rules.RULE_CHECKS]
     # 按分类排序：发票异常 < 资金与三流 < ... < 农产品收购
@@ -462,7 +463,6 @@ def test_43_rule_metadata_category_order():
     assert r19.get("kind") == "combo", r19
     assert r19.get("depends_on") == ["R17", "R39"], r19
     assert r19.get("category") == "组合规则", r19
-    assert r19.get("legacy_id") == "R19", r19
 
 
 def test_39_risk_policy_link_general():

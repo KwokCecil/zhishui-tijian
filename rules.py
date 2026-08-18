@@ -380,19 +380,19 @@ def check_r39(profile):
 
 
 def check_r19(profile):
-    """R19 临界点聚集（复合）：所得额落于小微限额85%-100% 且 大额调减项命中。"""
+    """C01 临界点聚集（组合规则）：所得额落于小微限额85%-100% 且 大额调减项命中。"""
     taxable = _num(profile.get("应纳税所得额(万元)"))
     rd = _num(profile.get("研发费用(万元)"))
     if taxable is None or rd is None:
-        return _rule("R19", "临界点聚集", False, "中", "应纳税所得额或研发费用缺失", "")
+        return _rule("C01", "临界点聚集", False, "中", "应纳税所得额或研发费用缺失", "")
     if 255 <= taxable <= 300 and _big_deduction(profile):
         return _rule(
-            "R19", "临界点聚集", True, "中",
+            "C01", "临界点聚集", True, "中",
             f"应纳税所得额 {taxable:.1f}万（位于300万限额的85%-100%）+ 大额调减项（研发费用 {rd:.0f}万，"
             f"≥ 所得额50%）",
             "临界点聚集（拆户/调减规避）是团伙虚开与偷逃税核查重点；备查研发立项、费用归集、辅助账。",
         )
-    return _rule("R19", "临界点聚集", False, "中", "未同时命中所得临界区间与大额调减", "")
+    return _rule("C01", "临界点聚集", False, "中", "未同时命中所得临界区间与大额调减", "")
 
 
 def check_r20(profile):
@@ -661,7 +661,7 @@ RULE_CATEGORIES = {
     "上下游传导": ["R09", "R10", "R11"],
     "申报与财务": ["R12", "R13", "R14"],
     "人资与信用": ["R15", "R16", "R17"],
-    "案例启发": ["R18", "R19", "R20", "R35", "R39"],
+    "案例启发": ["R18", "R20", "R35", "R39"],
     "加油站模板": ["R21", "R22", "R23"],
     "团伙虚开": ["R24", "R25", "R26", "R27", "R28", "R29"],
     "资格-优惠联动": ["R30"],
@@ -672,11 +672,10 @@ CATEGORY_ORDER = list(RULE_CATEGORIES)
 CATEGORY_OF = {rid: cat for cat, ids in RULE_CATEGORIES.items() for rid in ids}
 
 # 组合规则（C 系列）：由原子规则推导，与原子规则分开编号、分开执行。
-# demo 期间保留 legacy_id 作为兼容引用（原 R19），新组合按 C02、C03… 追加。
+# R19 已腾空（原临界点聚集迁至 C01），新组合按 C02、C03… 追加。
 COMBO_RULES = {
     "C01": {
         "name": "临界点聚集",
-        "legacy_id": "R19",
         "level": "中",
         "depends_on": ["R17", "R39"],
         "label": "R17 小微临界 + R39 大额调减",
@@ -760,7 +759,6 @@ def run_all(profile, invoices, fund_flows=None, contracts=None):
         if result.get("hit"):
             result["rule_id"] = combo_id
             result["combo_id"] = combo_id
-            result["legacy_id"] = meta["legacy_id"]
             result["name"] = meta["name"]
             result["kind"] = "combo"
             result["depends_on"] = meta["depends_on"]
