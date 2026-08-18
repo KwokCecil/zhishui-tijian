@@ -306,9 +306,13 @@ else:
 st.subheader("命中特征明细")
 if hits:
     for h in hits:
+        merge_note = (
+            f'<br><span class="note">🔗 已并入 {h["merged_into"]}，不重复计分</span>'
+            if h.get("merged_into") else ""
+        )
         st.markdown(
             f'<div class="hit-row">{level_badge(h["level"])}'
-            f'<b>{h["rule_id"]} {h["name"]}</b><br>'
+            f'<b>{h["rule_id"]} {h["name"]}</b>{merge_note}<br>'
             f'<span class="cond">📌 证据：{h["evidence"]}</span><br>'
             f'<span class="cond">💡 建议：{h["suggestion"]}</span></div>',
             unsafe_allow_html=True,
@@ -319,9 +323,9 @@ else:
 # ---- 优惠政策清单 ----
 st.subheader("优惠政策清单")
 st.markdown(
-    "状态说明：**可享受**＝条件全部满足（演示口径，申报时仍需企业确认）；"
-    "**需人工确认**＝条件基本满足，但需核对资质/证明材料/官方名单，系统不做最终判断；"
-    "**不适用**＝明确不满足条件。"
+    "判定流程：① 逐项核对条件（✅ 满足 / ❌ 不满足 / ❓ 数据缺失）→ "
+    "② 全部满足且无需资质 = **可享受**；③ 条件满足但需资质/材料 = **需人工确认**"
+    "（卡片内写明下一步做什么）；④ 任一条件不满足 = **不适用**。"
 )
 usable = [m for m in matched if m["status"] != "不适用"]
 not_usable = [m for m in matched if m["status"] == "不适用"]
@@ -334,12 +338,19 @@ if usable:
                 f"{mark} {c['field']}：当前 {c['value']}（要求 {c['requirement']}）"
             )
         cond_html = "<br>".join(cond_lines) if cond_lines else "需人工核对资格材料"
-        note_html = (
-            f'<div class="note">⚠️ {m["note"]}</div>'
-            if m.get("note") else ""
+        note_label = "下一步" if m["status"] == "需人工确认" else "说明"
+        notes = []
+        if m.get("exclusive_note"):
+            notes.append(f'<div class="note">🔁 互斥说明：{m["exclusive_note"]}</div>')
+        if m.get("note"):
+            notes.append(f'<div class="note">📋 {note_label}：{m["note"]}</div>')
+        note_html = "".join(notes)
+        excl_badge = (
+            f'<span class="status-badge badge-warn">二选一（与{m["exclusive_with"]}互斥）</span>'
+            if m.get("exclusive_with") else ""
         )
         st.markdown(
-            f'<div class="policy-row">{status_badge(m["status"])}'
+            f'<div class="policy-row">{status_badge(m["status"])}{excl_badge}'
             f'<b>{m["title"]}</b>　<code>{m["doc_number"]}</code><br>'
             f'<span style="font-size:.88rem;color:#475569">{m["benefit"]}</span><br>'
             f'<span class="cond">{cond_html}</span>{note_html}</div>',
@@ -350,7 +361,16 @@ else:
 if not_usable:
     with st.expander(f"不适用政策（{len(not_usable)} 条）"):
         for m in not_usable:
-            st.markdown(f"- {m['title']}（{m['doc_number']}）：{m['detail']}")
+            st.markdown(f"- {m['title']}（{m['doc_number']}）：{m['detail']}｜{m['note']}")
+
+risk_ids = {h["rule_id"] for h in hits}
+p01_usable = any(m["policy_id"] == "P01" and m["status"] != "不适用" for m in matched)
+if risk_ids & {"R17", "R19", "R35"} and p01_usable:
+    st.warning(
+        "⚠️ 风险与政策联动：本报告的临界风险针对“小微临界”——企业申报数据可能经过调减贴近300万线；"
+        "“可享受小微优惠”的前提是申报数据真实、符合小微条件。"
+        "建议先按 R19/R35 的备查清单自查申报真实性，确认无误后再享受优惠。"
+    )
 
 # ---- 行动建议 ----
 st.subheader("行动建议")

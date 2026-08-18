@@ -21,7 +21,8 @@ def _bonuses(hits):
 
 def risk_index(hits):
     """返回 (基础分, 组合加成列表, 风险指数)。"""
-    base = sum(RISK_POINTS.get(h.get("level", "低"), 3) for h in hits)
+    counted = [h for h in hits if not h.get("merged_into")]
+    base = sum(RISK_POINTS.get(h.get("level", "低"), 3) for h in counted)
     bonuses = _bonuses(hits)
     total = min(100, base + sum(b for _, b in bonuses))
     return base, bonuses, total
@@ -55,6 +56,8 @@ def score_breakdown(hits):
     """指数明细：每条命中的点数、基础分、加成与最终指数。"""
     rows = []
     for h in hits:
+        if h.get("merged_into"):
+            continue
         level = h.get("level", "低")
         rows.append({
             "rule_id": h.get("rule_id", ""),
@@ -84,15 +87,16 @@ def top_risks(hits, n=3):
 def risk_summary(hits):
     """汇总报告所需的统计信息。"""
     score, level = risk_score(hits)
+    counted = [h for h in hits if not h.get("merged_into")]
     by_level = {k: 0 for k in ("高", "中", "低", "提示")}
-    for h in hits:
+    for h in counted:
         by_level[h.get("level", "低")] = by_level.get(h.get("level", "低"), 0) + 1
     return {
         "score": score,
         "level": level,
-        "hit_count": len(hits),
+        "hit_count": len(counted),
         "by_level": by_level,
-        "top3": top_risks(hits),
+        "top3": top_risks(counted),
         "level_reason": level_reason(hits),
         "breakdown": score_breakdown(hits),
     }

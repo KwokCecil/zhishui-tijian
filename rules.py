@@ -690,6 +690,21 @@ def run_all(profile, invoices, fund_flows=None, contracts=None):
             result = _rule(rule_id, name, False, default_level, f"规则执行异常：{exc}", "")
         if result.get("hit"):
             hits.append(result)
+    return _merge_dependent_rules(hits)
+
+
+def _merge_dependent_rules(hits):
+    """规则层级合并：R19 临界点聚集是 R17 小微临界的升级，
+    同时命中时把 R17 并入 R19，避免重复计分。"""
+    by_id = {h["rule_id"]: h for h in hits}
+    if "R19" in by_id and "R17" in by_id:
+        r17 = by_id["R17"]
+        r19 = by_id["R19"]
+        r17["merged_into"] = "R19"
+        r19["evidence"] = f"{r19['evidence']}；临界项：{r17['evidence']}"
+        r19["suggestion"] = (
+            f"{r19['suggestion']}（本特征已合并 R17 小微临界提示，不重复计分）"
+        )
     return hits
 
 

@@ -374,11 +374,13 @@ def test_34_case1_level_high():
     hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
     summary = scoring.risk_summary(hits)
     assert summary["level"] == "高风险", summary
-    assert summary["score"] == 70, summary
-    assert summary["breakdown"]["base"] == 45, summary["breakdown"]
+    assert summary["score"] == 65, summary
+    assert summary["breakdown"]["base"] == 40, summary["breakdown"]
     assert any("R17+R19+R35" in name for name, _ in summary["breakdown"]["bonuses"]), summary["breakdown"]
     r17 = rule(hits, "R17")
-    assert "所得" in r17["evidence"] and "人数" not in r17["evidence"], r17
+    assert r17.get("merged_into") == "R19", r17
+    r19 = rule(hits, "R19")
+    assert "临界项" in r19["evidence"], r19
 
 
 def test_35_case6_level_high():
@@ -386,6 +388,44 @@ def test_35_case6_level_high():
     hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
     summary = scoring.risk_summary(hits)
     assert summary["level"] == "高风险", summary
+
+
+def test_36_policy_detail_clarity():
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
+    by_id = {m["policy_id"]: m for m in r}
+
+    p01 = by_id["P01"]
+    assert p01["status"] == "可享受", p01
+    head = [c for c in p01["conditions"] if c["field"] == "从业人数"][0]
+    assert head["pass"] is True and head["value"] == "120", head
+
+    p02 = by_id["P02"]
+    assert all(c["pass"] is True for c in p02["conditions"]), p02
+    assert "下一步" in p02["note"], p02
+
+    p08 = by_id["P08"]
+    assert p08["status"] == "需人工确认", p08
+    assert "下一步" in p08["note"], p08
+
+
+def test_37_policy_exclusivity():
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
+    by_id = {m["policy_id"]: m for m in r}
+    assert by_id["P01"]["exclusive_with"] == "P02", by_id["P01"]
+    assert by_id["P02"]["exclusive_with"] == "P01", by_id["P02"]
+    assert "互斥" in by_id["P01"]["exclusive_note"], by_id["P01"]
+
+
+def test_38_rule_hierarchy_merge():
+    data = generate_data.build_scenario("case1")
+    hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
+    summary = scoring.risk_summary(hits)
+    assert summary["hit_count"] == 2, summary  # R19（含R17）+ R35
+    r17 = rule(hits, "R17")
+    assert r17["merged_into"] == "R19", r17
+    assert summary["by_level"]["低"] == 0, summary["by_level"]
 
 
 def main():
@@ -424,6 +464,9 @@ def main():
     case(33, "离线 Agent 对话循环（风险/政策/小微）", test_33_offline_agent_loop)
     case(34, "案例一等级：高风险（组合升级）", test_34_case1_level_high)
     case(35, "案例六等级：高风险（高危+中危）", test_35_case6_level_high)
+    case(36, "政策明细清晰（P01数值/P02全满足/P08下一步）", test_36_policy_detail_clarity)
+    case(37, "P01/P02 互斥择优（二选一）", test_37_policy_exclusivity)
+    case(38, "R19 合并 R17 不重复计分", test_38_rule_hierarchy_merge)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)
