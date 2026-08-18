@@ -16,24 +16,24 @@ NEGATIVE_INDUSTRIES = ["烟草制造业", "住宿和餐饮业", "批发和零售
 # 政策 ↔ 风险规则映射：某项政策可享受时，若命中相关风险特征，
 # 应提示"享受前提"（先自查、后享受）。这是通用机制，不针对具体案例。
 POLICY_RISK_LINKS = {
-    "P01": {
+    "P101": {
         "title": "小型微利企业低税率",
-        "rules": ["R17", "C01", "R35"],
+        "rules": ["601", "001", "604"],
         "text": "命中与小微资格相关的风险特征（{}）。“可享受小微优惠”的前提是申报数据真实、符合小微条件；请先按备查清单自查申报真实性，确认无误后再享受。",
     },
-    "P08": {
+    "P301": {
         "title": "六税两费减半征收",
-        "rules": ["R17", "C01", "R35"],
+        "rules": ["601", "001", "604"],
         "text": "命中与小微资格相关的风险特征（{}）。六税两费减半以符合小微条件为前提，请先核实申报真实性后再确认享受。",
     },
-    "P02": {
+    "P102": {
         "title": "高新技术企业减按15%",
-        "rules": ["R30"],
+        "rules": ["605"],
         "text": "命中资格-优惠不匹配风险（{}）。高新优惠享受前提是高企资格真实有效；请先完成资格复核，未确认前不享受。",
     },
-    "P03": {
+    "P103": {
         "title": "研发费用加计扣除100%",
-        "rules": ["R20"],
+        "rules": ["603"],
         "text": "命中研发加计占比异常（{}）。享受研发加计前提是研发活动真实、费用归集合规；请先核对立项文件与辅助账。",
     },
 }
@@ -54,7 +54,7 @@ def _num(value):
 
 
 def _small_micro_qualified(p):
-    """小型微利企业四条件判定（供 P01/P08 与 small_micro_status 共用）。"""
+    """小型微利企业四条件判定（供 P101/P301 与 small_micro_status 共用）。"""
     headcount = _num(p.get("个税申报人数"))
     assets = _num(p.get("资产总额(万元)"))
     taxable = _num(p.get("应纳税所得额(万元)"))
@@ -217,17 +217,17 @@ def match_cards(profile, cards=None):
 
 
 def _apply_exclusivity(results):
-    """政策互斥：P01 小微低税率 与 P02 高新15% 同一所得只能享受一项，择优适用。"""
+    """政策互斥：P101 小微低税率 与 P102 高新15% 同一所得只能享受一项，择优适用。"""
     by_id = {r["policy_id"]: r for r in results}
-    p01 = by_id.get("P01")
-    p02 = by_id.get("P02")
+    p01 = by_id.get("P101")
+    p02 = by_id.get("P102")
     if p01 and p02 and p01["status"] != "不适用" and p02["status"] != "不适用":
-        p01["exclusive_with"] = "P02"
+        p01["exclusive_with"] = "P102"
         p01["exclusive_note"] = (
             "与高新技术企业15%税率互斥，同一所得只能享受一项；"
             "小微实际税负5%更优，建议优先小微（前提：申报数据真实、小微条件成立）"
         )
-        p02["exclusive_with"] = "P01"
+        p02["exclusive_with"] = "P101"
         p02["exclusive_note"] = (
             "与小型微利企业5%税率互斥；若小微条件成立，小微更优，本项仅作备选"
         )
@@ -254,7 +254,7 @@ def linked_warnings(hits, matched):
 
 
 def small_micro_status(profile):
-    """小型微利企业条件逐项判定（配合 R17 及政策 P01）。"""
+    """小型微利企业条件逐项判定（配合 601 及政策 P101）。"""
     p = profile.iloc[0].to_dict()
     qualified, headcount, assets, taxable, industry = _small_micro_qualified(p)
     checks = [

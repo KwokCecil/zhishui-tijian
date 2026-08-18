@@ -76,7 +76,7 @@ def test_01_tax_burden_low():
         ("XS1", "2026-07-01", "销项发票", "软件服务", 6, 10000000, 600000, "甲", "", "正常", "", ""),
         ("JJ1", "2026-07-02", "进项发票", "技术服务", 6, 9500000, 570000, "乙", "", "正常", "", ""),
     ])
-    r = rule(rules.run_all(p, inv, funds([]), contracts([])), "R12")
+    r = rule(rules.run_all(p, inv, funds([]), contracts([])), "401")
     assert r["hit"] and r["level"] == "高", f"预期高，实际 {r}"
 
 
@@ -85,7 +85,7 @@ def test_02_input_output_mismatch():
         ("XS1", "2026-07-01", "销项发票", "软件服务", 6, 1000000, 60000, "甲", "", "正常", "", ""),
         ("JJ1", "2026-07-02", "进项发票", "餐饮服务", 6, 800000, 48000, "乙", "", "正常", "", ""),
     ])
-    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "R04")
+    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "104")
     assert r["hit"], r
 
 
@@ -95,7 +95,7 @@ def test_03_top_up_invoices():
         ("XS2", "2026-07-28", "销项发票", "软件服务", 6, 99990, 5999.4, "乙", "", "正常", "", ""),
         ("XS3", "2026-07-28", "销项发票", "软件服务", 6, 99990, 5999.4, "丙", "", "正常", "", ""),
     ])
-    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "R01")
+    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "101")
     assert r["hit"] and r["level"] == "高", r
 
 
@@ -107,13 +107,13 @@ def test_04_three_flows_mismatch():
         ("2026-07-05", "收入", "乙方", 1000000, "软件服务费", "HT-001", "对公账户"),
     ])
     c = contracts([("HT-001", "甲方", 1000000, "2026-06-01")])
-    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, f, c), "R06")
+    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, f, c), "201")
     assert r["hit"] and r["level"] == "高", r
 
 
 def test_05_headcount_social_mismatch():
     p = profile({"个税申报人数": 30, "社保参保人数": 15, "资产总额(万元)": 100})
-    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R15")
+    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "501")
     assert r["hit"], r
 
 
@@ -121,7 +121,7 @@ def test_06_upstream_risk():
     inv = invoices([
         ("JJ1", "2026-07-02", "进项发票", "技术服务", 6, 1000000, 60000, "走逃公司", "", "走逃失联", "", ""),
     ])
-    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "R09")
+    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "301")
     assert r["hit"] and "异常凭证" in r["suggestion"] and "A级" in r["suggestion"], r
 
 
@@ -129,14 +129,14 @@ def test_07_red_void_ratio():
     rows = [("XS1", "2026-07-01", "销项发票", "软件服务", 6, 1000000, 60000, "甲", "", "正常", "", "")]
     for i in range(2):
         rows.append((f"HC{i}", "2026-07-10", "红字发票", "软件服务", 6, 200000, 12000, "甲", "", "正常", "", ""))
-    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), invoices(rows), funds([]), contracts([])), "R03")
+    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), invoices(rows), funds([]), contracts([])), "103")
     assert r["hit"], r
 
 
 def test_08_small_micro_near_limit():
     p = profile({"个税申报人数": 280, "资产总额(万元)": 4800, "应纳税所得额(万元)": 292.7})
     hits = rules.run_all(p, invoices([]), funds([]), contracts([]))
-    r = rule(hits, "R17")
+    r = rule(hits, "601")
     assert r["hit"], r
     sm = policies.small_micro_status(p)
     assert sm["qualified"], sm
@@ -175,7 +175,7 @@ def test_12_unknown_policy_refused():
 
 def test_13_missing_data_no_guess():
     p = profile({"行业": "软件和信息技术服务业", "资产总额(万元)": ""})
-    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R31")
+    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "701")
     assert r["hit"] and "缺失" in r["evidence"] and "补充" in r["suggestion"], r
 
 
@@ -193,9 +193,9 @@ def test_14_score_boundaries():
     assert scoring.risk_level([{"level": "高"}, {"level": "高"}]) == "高风险"
     # 关键预警组合：5 + 20 + 20 + 25 = 70 → 高风险
     combo = [
-        {"level": "低", "rule_id": "R17"},
-        {"level": "中", "rule_id": "C01"},
-        {"level": "中", "rule_id": "R35"},
+        {"level": "低", "rule_id": "601"},
+        {"level": "中", "rule_id": "001"},
+        {"level": "中", "rule_id": "604"},
     ]
     assert scoring.risk_level(combo) == "高风险"
     assert scoring.risk_index(combo)[2] == 70
@@ -212,17 +212,17 @@ def test_15_report_traceable():
 def test_16_case1_similar_case_and_docs():
     data = generate_data.build_scenario("case1")
     hits = hits_of(data)
-    r17 = rule(hits, "R17")
-    r35 = rule(hits, "R35")
+    r17 = rule(hits, "601")
+    r35 = rule(hits, "604")
     assert "备查" in r17["suggestion"] or "备查" in r35["suggestion"], (r17, r35)
 
 
 def test_17_fuel_three_source():
     data = generate_data.build_scenario("fuel")
     hits = hits_of(data)
-    r22 = rule(hits, "R22")
+    r22 = rule(hits, "802")
     assert r22["hit"] and "以进控销" in r22["suggestion"], r22
-    assert any(h["rule_id"] in ("R21", "R23", "R31", "R32", "R33", "R34") for h in hits), hits
+    assert any(h["rule_id"] in ("801", "803", "701", "702", "703", "704") for h in hits), hits
 
 
 def test_18_gang_cluster_features():
@@ -230,49 +230,49 @@ def test_18_gang_cluster_features():
     rows = [("XS1", "2026-07-01", "销项发票", "咨询费", 6, 100000, 6000, "甲", "", "正常", "", "")]
     rows += [("XS2", "2026-07-02", "销项发票", "咨询费", 6, 100000, 6000, "乙", "", "正常", "", "")]
     hits = rules.run_all(p, invoices(rows), funds([]), contracts([]))
-    r24 = rule(hits, "R24")
-    r27 = rule(hits, "R27")
+    r24 = rule(hits, "901")
+    r27 = rule(hits, "902")
     assert r24["hit"] and r27["hit"], (r24, r27)
 
 
 def test_19_qualification_deduction_mismatch():
     p = profile({"是否高新技术企业": "否", "是否享受加计抵减": "是", "资产总额(万元)": 100})
-    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R30")
+    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "605")
     assert r["hit"] and "高企资格复核清单" in r["suggestion"], r
 
 
 def test_20_fuel_data_gap():
     p = profile({"行业": "成品油零售", "资产总额(万元)": 100, "液位仪月缺失率(%)": 12})
-    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R31")
+    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "701")
     assert r["hit"] and "缺失率" in r["evidence"], r
 
 
 def test_21_upstream_docs_vs_local():
     p = profile({"行业": "成品油零售", "资产总额(万元)": 100, "上游进油单存在": "是", "本地入库记录缺失": "是"})
-    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R33")
+    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "703")
     assert r["hit"] and "锚点" in r["suggestion"], r
 
 
 def test_22_device_chip_risk():
     p = profile({"行业": "成品油零售", "资产总额(万元)": 100, "设备芯片标准": "旧标准"})
-    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R34")
+    r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "704")
     assert r["hit"] and "降级" in r["evidence"], r
 
 
 def test_23_case1_full_warning_chain():
     data = generate_data.build_scenario("case1")
     hits = hits_of(data)
-    for rid in ("R17", "C01", "R35"):
+    for rid in ("601", "001", "604"):
         rule(hits, rid)
-    r17 = rule(hits, "R17")
+    r17 = rule(hits, "601")
     assert "六税两费" in r17["suggestion"] or "政策包" in r17["suggestion"], r17
 
 
 def test_24_agricultural_purchase_risk():
     data = generate_data.build_scenario("case6")
     hits = hits_of(data)
-    r36 = rule(hits, "R36")
-    r37 = rule(hits, "R37")
+    r36 = rule(hits, "804")
+    r37 = rule(hits, "805")
     assert "核验清单" in r36["suggestion"] and "代开" in r36["suggestion"], r36
     assert r37["hit"], r37
 
@@ -281,7 +281,7 @@ def test_25_abnormal_invoice_path():
     inv = invoices([
         ("JJ1", "2026-07-02", "进项发票", "技术服务", 6, 1000000, 60000, "失联公司", "", "非正常户", "", ""),
     ])
-    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "R09")
+    r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "301")
     assert "暂不允许抵扣" in r["suggestion"] and "进项转出" in r["suggestion"], r
 
 
@@ -349,7 +349,7 @@ def test_32_report_tool_offline():
         "matched": matched,
     })
     assert "风险指数" in r["report"], r
-    assert "R17" in r["report"], r
+    assert "601" in r["report"], r
 
 
 def test_33_offline_agent_loop():
@@ -376,11 +376,11 @@ def test_34_case1_level_high():
     assert summary["level"] == "高风险", summary
     assert summary["score"] == 65, summary
     assert summary["breakdown"]["base"] == 40, summary["breakdown"]
-    assert any("R17/C01 + R35" in name for name, _ in summary["breakdown"]["bonuses"]), summary["breakdown"]
-    r17 = rule(hits, "R17")
-    assert r17.get("merged_into") == "C01", r17
-    r19 = rule(hits, "C01")
-    assert "R17项" in r19["evidence"] and "R39项" in r19["evidence"], r19
+    assert any("601/001 + 604" in name for name, _ in summary["breakdown"]["bonuses"]), summary["breakdown"]
+    r17 = rule(hits, "601")
+    assert r17.get("merged_into") == "001", r17
+    r19 = rule(hits, "001")
+    assert "601项" in r19["evidence"] and "602项" in r19["evidence"], r19
 
 
 def test_35_case6_level_high():
@@ -395,16 +395,16 @@ def test_36_policy_detail_clarity():
     r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
     by_id = {m["policy_id"]: m for m in r}
 
-    p01 = by_id["P01"]
+    p01 = by_id["P101"]
     assert p01["status"] == "可享受", p01
     head = [c for c in p01["conditions"] if c["field"] == "从业人数"][0]
     assert head["pass"] is True and head["value"] == "120", head
 
-    p02 = by_id["P02"]
+    p02 = by_id["P102"]
     assert all(c["pass"] is True for c in p02["conditions"]), p02
     assert "下一步" in p02["note"], p02
 
-    p08 = by_id["P08"]
+    p08 = by_id["P301"]
     assert p08["status"] == "需人工确认", p08
     assert "下一步" in p08["note"], p08
 
@@ -413,55 +413,56 @@ def test_37_policy_exclusivity():
     scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
     r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
     by_id = {m["policy_id"]: m for m in r}
-    assert by_id["P01"]["exclusive_with"] == "P02", by_id["P01"]
-    assert by_id["P02"]["exclusive_with"] == "P01", by_id["P02"]
-    assert "互斥" in by_id["P01"]["exclusive_note"], by_id["P01"]
+    assert by_id["P101"]["exclusive_with"] == "P102", by_id["P101"]
+    assert by_id["P102"]["exclusive_with"] == "P101", by_id["P102"]
+    assert "互斥" in by_id["P101"]["exclusive_note"], by_id["P101"]
 
 
 def test_38_rule_hierarchy_merge():
     data = generate_data.build_scenario("case1")
     hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
     summary = scoring.risk_summary(hits)
-    assert summary["hit_count"] == 2, summary  # C01（含R17/R39）+ R35
-    r17 = rule(hits, "R17")
-    assert r17["merged_into"] == "C01", r17
-    r39 = rule(hits, "R39")
-    assert r39["merged_into"] == "C01", r39
+    assert summary["hit_count"] == 2, summary  # 001（含601/602）+ 604
+    r17 = rule(hits, "601")
+    assert r17["merged_into"] == "001", r17
+    r39 = rule(hits, "602")
+    assert r39["merged_into"] == "001", r39
     assert summary["by_level"]["低"] == 0, summary["by_level"]
 
 
 def test_42_big_deduction_standalone():
-    # risk 场景：研发300万 ≥ 所得98.5万×50% → R39 单独命中（C01 未触发，不合并）
+    # risk 场景：研发300万 ≥ 所得98.5万×50% → 602 单独命中（001 未触发，不合并）
     risk = generate_data.build_scenario("risk")
     hits = rules.run_all(risk["company_profile"], risk["invoices"], risk["fund_flows"], risk["contracts"])
-    r39 = rule(hits, "R39")
+    r39 = rule(hits, "602")
     assert r39["hit"] and r39.get("merged_into") is None, r39
-    assert not any(h["rule_id"] == "C01" for h in hits), [h["rule_id"] for h in hits]
+    assert not any(h["rule_id"] == "001" for h in hits), [h["rule_id"] for h in hits]
 
-    # fuel 场景：无研发费用 → R39 不命中
+    # fuel 场景：无研发费用 → 602 不命中
     fuel = generate_data.build_scenario("fuel")
     hits_f = rules.run_all(fuel["company_profile"], fuel["invoices"], fuel["fund_flows"], fuel["contracts"])
-    assert not any(h["rule_id"] == "R39" for h in hits_f), [h["rule_id"] for h in hits_f]
+    assert not any(h["rule_id"] == "602" for h in hits_f), [h["rule_id"] for h in hits_f]
 
 
 def test_43_rule_metadata_category_order():
-    assert rules.CATEGORY_OF["R01"] == "发票异常", rules.CATEGORY_OF
-    assert rules.CATEGORY_OF["R39"] == "案例启发", rules.CATEGORY_OF
-    assert rules.COMBO_RULES["C01"]["depends_on"] == ["R17", "R39"], rules.COMBO_RULES
-    assert "legacy_id" not in rules.COMBO_RULES["C01"], rules.COMBO_RULES
-    assert "R19" not in rules.CATEGORY_OF, "R19 应已腾空，只保留 C01"
+    assert rules.CATEGORY_OF["101"] == "发票与开票", rules.CATEGORY_OF
+    assert rules.CATEGORY_OF["602"] == "资格与优惠", rules.CATEGORY_OF
+    assert rules.COMBO_RULES["001"]["depends_on"] == ["601", "602"], rules.COMBO_RULES
+    assert "legacy_id" not in rules.COMBO_RULES["001"], rules.COMBO_RULES
+    assert "R17" not in rules.CATEGORY_OF and "601" in rules.CATEGORY_OF, rules.CATEGORY_OF
 
     order = [r[0] for r in rules.RULE_CHECKS]
-    # 按分类排序：发票异常 < 资金与三流 < ... < 农产品收购
-    assert order.index("R01") < order.index("R06") < order.index("R36")
-    # 案例启发类（R35/R39）排在加油站模板（R21）之前
-    assert order.index("R39") < order.index("R21"), order
+    # 按大类排序：发票 < 资金 < 人资 < 资格优惠 < 数据质量 < 行业模板 < 关联团伙
+    assert (
+        order.index("101") < order.index("201") < order.index("501")
+        < order.index("601") < order.index("701") < order.index("801") < order.index("901")
+    ), order
 
     case1 = generate_data.build_scenario("case1")
     hits = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
-    r19 = rule(hits, "C01")
+    r19 = rule(hits, "001")
     assert r19.get("kind") == "combo", r19
-    assert r19.get("depends_on") == ["R17", "R39"], r19
+    assert r19.get("depends_on") == ["601", "602"], r19
     assert r19.get("category") == "组合规则", r19
 
 
@@ -471,15 +472,15 @@ def test_39_risk_policy_link_general():
     matched1 = policies.match_cards(case1["company_profile"])
     w1 = policies.linked_warnings(hits1, matched1)
     pids1 = {w["policy_id"] for w in w1}
-    assert {"P01", "P08"} <= pids1, w1
-    assert "P02" not in pids1 and "P03" not in pids1, w1
+    assert {"P101", "P301"} <= pids1, w1
+    assert "P102" not in pids1 and "P103" not in pids1, w1
 
     risk = generate_data.build_scenario("risk")
     hits_r = rules.run_all(risk["company_profile"], risk["invoices"], risk["fund_flows"], risk["contracts"])
     matched_r = policies.match_cards(risk["company_profile"])
     w_r = policies.linked_warnings(hits_r, matched_r)
     pids_r = {w["policy_id"] for w in w_r}
-    assert "P01" in pids_r and "P03" in pids_r, w_r
+    assert "P101" in pids_r and "P103" in pids_r, w_r
 
     fuel = generate_data.build_scenario("fuel")
     hits_f = rules.run_all(fuel["company_profile"], fuel["invoices"], fuel["fund_flows"], fuel["contracts"])
@@ -497,8 +498,8 @@ def test_40_policy_status_no_false_usable():
     matched1 = policies.match_cards(case1["company_profile"])
     by_id = {m["policy_id"]: m for m in matched1}
     # 软件即征即退：制造业 + 非自研软件 → 明确不满足，不应出现在可关注里
-    assert by_id["P05"]["status"] == "不适用", by_id["P05"]
-    assert all(c["pass"] is not None for c in by_id["P05"]["conditions"]), by_id["P05"]
+    assert by_id["P203"]["status"] == "不适用", by_id["P203"]
+    assert all(c["pass"] is not None for c in by_id["P203"]["conditions"]), by_id["P203"]
 
     # 六税两费：小规模纳税人同样适用（不只小微）
     small = profile({
@@ -506,19 +507,19 @@ def test_40_policy_status_no_false_usable():
         "个税申报人数": 5, "社保参保人数": 5, "资产总额(万元)": 500,
         "营业收入(万元)": 200, "应纳税所得额(万元)": 50,
     })
-    p08_small = {m["policy_id"]: m for m in policies.match_cards(small)}["P08"]
+    p08_small = {m["policy_id"]: m for m in policies.match_cards(small)}["P301"]
     assert p08_small["status"] == "需人工确认", p08_small
     assert p08_small["conditions"][0]["pass"] is True, p08_small
 
     # 一般纳税人且不符合小微 → 六税两费不适用
     case6 = generate_data.build_scenario("case6")
-    p08_case6 = {m["policy_id"]: m for m in policies.match_cards(case6["company_profile"])}["P08"]
+    p08_case6 = {m["policy_id"]: m for m in policies.match_cards(case6["company_profile"])}["P301"]
     assert p08_case6["status"] == "不适用", p08_case6
 
 
 def test_41_restriction_card_semantics():
     case1 = generate_data.build_scenario("case1")
-    p04 = {m["policy_id"]: m for m in policies.match_cards(case1["company_profile"])}["P04"]
+    p04 = {m["policy_id"]: m for m in policies.match_cards(case1["company_profile"])}["P104"]
     assert p04["status"] == "未触发限制", p04
     assert "负面清单" in p04["note"] and "限制" in p04["note"], p04
 
@@ -527,7 +528,7 @@ def test_41_restriction_card_semantics():
         "个税申报人数": 50, "资产总额(万元)": 1000,
         "营业收入(万元)": 3000, "应纳税所得额(万元)": 200,
     })
-    p04_hit = {m["policy_id"]: m for m in policies.match_cards(wholesale)}["P04"]
+    p04_hit = {m["policy_id"]: m for m in policies.match_cards(wholesale)}["P104"]
     assert p04_hit["status"] == "命中限制", p04_hit
     assert "不得享受" in p04_hit["note"], p04_hit
 
@@ -538,15 +539,15 @@ def test_39_risk_policy_link_general():
     matched1 = policies.match_cards(case1["company_profile"])
     w1 = policies.linked_warnings(hits1, matched1)
     pids1 = {w["policy_id"] for w in w1}
-    assert {"P01", "P08"} <= pids1, w1
-    assert "P02" not in pids1 and "P03" not in pids1, w1
+    assert {"P101", "P301"} <= pids1, w1
+    assert "P102" not in pids1 and "P103" not in pids1, w1
 
     risk = generate_data.build_scenario("risk")
     hits_r = rules.run_all(risk["company_profile"], risk["invoices"], risk["fund_flows"], risk["contracts"])
     matched_r = policies.match_cards(risk["company_profile"])
     w_r = policies.linked_warnings(hits_r, matched_r)
     pids_r = {w["policy_id"] for w in w_r}
-    assert "P01" in pids_r and "P03" in pids_r, w_r
+    assert "P101" in pids_r and "P103" in pids_r, w_r
 
     fuel = generate_data.build_scenario("fuel")
     hits_f = rules.run_all(fuel["company_profile"], fuel["invoices"], fuel["fund_flows"], fuel["contracts"])
@@ -560,14 +561,14 @@ def test_39_risk_policy_link_general():
 
 
 def main():
-    case(1, "税负率明显低于行业参考区间 → R12 高", test_01_tax_burden_low)
-    case(2, "销项软件、进项全餐饮 → R04", test_02_input_output_mismatch)
-    case(3, "连续3张接近顶额 → R01", test_03_top_up_invoices)
-    case(4, "发票与资金付款方不一致 → R06", test_04_three_flows_mismatch)
-    case(5, "个税30人、社保15人 → R15", test_05_headcount_social_mismatch)
-    case(6, "上游走逃失联 → R09+异常凭证路径", test_06_upstream_risk)
-    case(7, "红冲/作废率30% → R03", test_07_red_void_ratio)
-    case(8, "小微临界（280/4800/292.7）→ R17+仍符合", test_08_small_micro_near_limit)
+    case(1, "税负率明显低于行业参考区间 → 401 高", test_01_tax_burden_low)
+    case(2, "销项软件、进项全餐饮 → 104", test_02_input_output_mismatch)
+    case(3, "连续3张接近顶额 → 101", test_03_top_up_invoices)
+    case(4, "发票与资金付款方不一致 → 201", test_04_three_flows_mismatch)
+    case(5, "个税30人、社保15人 → 501", test_05_headcount_social_mismatch)
+    case(6, "上游走逃失联 → 301+异常凭证路径", test_06_upstream_risk)
+    case(7, "红冲/作废率30% → 103", test_07_red_void_ratio)
+    case(8, "小微临界（280/4800/292.7）→ 601+仍符合", test_08_small_micro_near_limit)
     case(9, "人数350 → 小微不满足并指出超项", test_09_small_micro_exceeded)
     case(10, "软件公司+研发80万 → 研发加计+即征即退机会", test_10_policy_software)
     case(11, "全部正常 → 低风险画像", test_11_clean_low_risk)
@@ -576,14 +577,14 @@ def main():
     case(14, "风险指数边界（0/45/65/70/90）→ 等级一致", test_14_score_boundaries)
     case(15, "报告逐条可溯源（ID+证据+建议）", test_15_report_traceable)
     case(16, "案例一命中 → 展示相似案例+备查资料", test_16_case1_similar_case_and_docs)
-    case(17, "加油站模板 → R22 三源不一致+以进控销", test_17_fuel_three_source)
-    case(18, "团伙特征（同址+咨询费集中）→ R24+R27", test_18_gang_cluster_features)
-    case(19, "非高企享受加计抵减 → R30 复核清单", test_19_qualification_deduction_mismatch)
-    case(20, "液位仪缺失率12% → R31", test_20_fuel_data_gap)
-    case(21, "上游进油单存在但本地记录缺失 → R33", test_21_upstream_docs_vs_local)
-    case(22, "旧标准芯片 → R34 数据降级", test_22_device_chip_risk)
-    case(23, "案例一预警链（R17/C01/R35+降负政策包）", test_23_case1_full_warning_chain)
-    case(24, "收购对象身份存疑+单户巨大 → R36+R37+代开路径", test_24_agricultural_purchase_risk)
+    case(17, "加油站模板 → 802 三源不一致+以进控销", test_17_fuel_three_source)
+    case(18, "团伙特征（同址+咨询费集中）→ 901+902", test_18_gang_cluster_features)
+    case(19, "非高企享受加计抵减 → 605 复核清单", test_19_qualification_deduction_mismatch)
+    case(20, "液位仪缺失率12% → 701", test_20_fuel_data_gap)
+    case(21, "上游进油单存在但本地记录缺失 → 703", test_21_upstream_docs_vs_local)
+    case(22, "旧标准芯片 → 704 数据降级", test_22_device_chip_risk)
+    case(23, "案例一预警链（601/001/604+降负政策包）", test_23_case1_full_warning_chain)
+    case(24, "收购对象身份存疑+单户巨大 → 804+805+代开路径", test_24_agricultural_purchase_risk)
     case(25, "上游走逃 → 异常凭证处理路径提示", test_25_abnormal_invoice_path)
     case(26, "工具层 schema 完整（名称/描述/参数）", test_26_tool_schemas_valid)
     case(27, "run_tax_health_check 工具（risk→高风险）", test_27_health_check_tool)
@@ -595,13 +596,13 @@ def main():
     case(33, "离线 Agent 对话循环（风险/政策/小微）", test_33_offline_agent_loop)
     case(34, "案例一等级：高风险（组合升级）", test_34_case1_level_high)
     case(35, "案例六等级：高风险（高危+中危）", test_35_case6_level_high)
-    case(36, "政策明细清晰（P01数值/P02全满足/P08下一步）", test_36_policy_detail_clarity)
-    case(37, "P01/P02 互斥择优（二选一）", test_37_policy_exclusivity)
-    case(38, "C01 合并 R17/R39 不重复计分", test_38_rule_hierarchy_merge)
+    case(36, "政策明细清晰（P101数值/P102全满足/P301下一步）", test_36_policy_detail_clarity)
+    case(37, "P101/P102 互斥择优（二选一）", test_37_policy_exclusivity)
+    case(38, "001 合并 601/602 不重复计分", test_38_rule_hierarchy_merge)
     case(39, "风险-政策联动为通用机制（多场景验证）", test_39_risk_policy_link_general)
     case(40, "条件不满足即不适用/六税两费含小规模纳税人", test_40_policy_status_no_false_usable)
     case(41, "负面清单按限制规则判定（未触发/命中）", test_41_restriction_card_semantics)
-    case(42, "R39 大额调减项可单独命中（低危原子规则）", test_42_big_deduction_standalone)
+    case(42, "602 大额调减项可单独命中（低危原子规则）", test_42_big_deduction_standalone)
     case(43, "规则分类编号与组合规则元数据", test_43_rule_metadata_category_order)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")

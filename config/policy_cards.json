@@ -1,6 +1,6 @@
 [
   {
-    "policy_id": "P01",
+    "policy_id": "P101",
     "title": "小型微利企业低税率",
     "doc_number": "财政部 税务总局公告2023年第12号",
     "tax_type": "企业所得税",
@@ -19,7 +19,7 @@
     "case": "案例一：光伏产业链设备企业应税所得292.7万，距限额仅7.3万"
   },
   {
-    "policy_id": "P02",
+    "policy_id": "P102",
     "title": "高新技术企业减按15%",
     "doc_number": "企业所得税法第28条（认定办法文号待核）",
     "tax_type": "企业所得税",
@@ -37,7 +37,7 @@
     "case": "案例五：资格认定权（科技部门）与优惠享受权（税务）分离"
   },
   {
-    "policy_id": "P03",
+    "policy_id": "P103",
     "title": "研发费用加计扣除100%",
     "doc_number": "财政部 税务总局公告2023年第7号",
     "tax_type": "企业所得税",
@@ -56,7 +56,7 @@
     "case": "案例一：研发费用税前扣除600余万元，研发真实性核查"
   },
   {
-    "policy_id": "P04",
+    "policy_id": "P104",
     "title": "研发加计扣除负面清单行业",
     "doc_number": "财税〔2015〕119号",
     "tax_type": "企业所得税",
@@ -74,7 +74,42 @@
     "case": ""
   },
   {
-    "policy_id": "P05",
+    "policy_id": "P201",
+    "title": "小规模纳税人月销售额10万以下免征增值税",
+    "doc_number": "财政部 税务总局公告2023年第19号",
+    "tax_type": "增值税",
+    "object_type": "小规模纳税人",
+    "tags": ["增值税", "小规模", "免征"],
+    "conditions": [
+      {"field": "纳税人类型", "op": "==", "value": "小规模纳税人"},
+      {"field": "月销售额(万元)", "op": "<=", "value": 10, "unit": "万元"}
+    ],
+    "benefit": "月销售额10万元（含）以下免征增值税",
+    "validity": {"effective_date": "2023-01-01", "expiry_date": "2027-12-31", "status": "现行"},
+    "source_url": "国家税务总局税收政策库",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "可规则",
+    "case": ""
+  },
+  {
+    "policy_id": "P202",
+    "title": "小规模纳税人3%征收率减按1%",
+    "doc_number": "财政部 税务总局公告2023年第19号",
+    "tax_type": "增值税",
+    "object_type": "适用3%征收率的小规模纳税人",
+    "tags": ["增值税", "小规模", "减征"],
+    "conditions": [
+      {"field": "纳税人类型", "op": "==", "value": "小规模纳税人"}
+    ],
+    "benefit": "适用3%征收率的应税销售收入减按1%征收",
+    "validity": {"effective_date": "2023-01-01", "expiry_date": "2027-12-31", "status": "现行"},
+    "source_url": "国家税务总局税收政策库",
+    "last_verified": "2026-08-18（待官网复核）",
+    "ruleable": "可规则",
+    "case": ""
+  },
+  {
+    "policy_id": "P203",
     "title": "软件产品增值税即征即退",
     "doc_number": "财税〔2011〕100号",
     "tax_type": "增值税",
@@ -94,42 +129,7 @@
     "case": "软件+税务 Demo 加分场景"
   },
   {
-    "policy_id": "P06",
-    "title": "小规模纳税人月销售额10万以下免征增值税",
-    "doc_number": "财政部 税务总局公告2023年第19号",
-    "tax_type": "增值税",
-    "object_type": "小规模纳税人",
-    "tags": ["增值税", "小规模", "免征"],
-    "conditions": [
-      {"field": "纳税人类型", "op": "==", "value": "小规模纳税人"},
-      {"field": "月销售额(万元)", "op": "<=", "value": 10, "unit": "万元"}
-    ],
-    "benefit": "月销售额10万元（含）以下免征增值税",
-    "validity": {"effective_date": "2023-01-01", "expiry_date": "2027-12-31", "status": "现行"},
-    "source_url": "国家税务总局税收政策库",
-    "last_verified": "2026-08-18（待官网复核）",
-    "ruleable": "可规则",
-    "case": ""
-  },
-  {
-    "policy_id": "P07",
-    "title": "小规模纳税人3%征收率减按1%",
-    "doc_number": "财政部 税务总局公告2023年第19号",
-    "tax_type": "增值税",
-    "object_type": "适用3%征收率的小规模纳税人",
-    "tags": ["增值税", "小规模", "减征"],
-    "conditions": [
-      {"field": "纳税人类型", "op": "==", "value": "小规模纳税人"}
-    ],
-    "benefit": "适用3%征收率的应税销售收入减按1%征收",
-    "validity": {"effective_date": "2023-01-01", "expiry_date": "2027-12-31", "status": "现行"},
-    "source_url": "国家税务总局税收政策库",
-    "last_verified": "2026-08-18（待官网复核）",
-    "ruleable": "可规则",
-    "case": ""
-  },
-  {
-    "policy_id": "P08",
+    "policy_id": "P301",
     "title": "六税两费减半征收",
     "doc_number": "财政部 税务总局公告2023年第12号",
     "tax_type": "六税两费",
