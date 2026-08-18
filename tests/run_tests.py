@@ -428,6 +428,60 @@ def test_38_rule_hierarchy_merge():
     assert summary["by_level"]["低"] == 0, summary["by_level"]
 
 
+def test_39_risk_policy_link_general():
+    case1 = generate_data.build_scenario("case1")
+    hits1 = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
+    matched1 = policies.match_cards(case1["company_profile"])
+    w1 = policies.linked_warnings(hits1, matched1)
+    pids1 = {w["policy_id"] for w in w1}
+    assert {"P01", "P08"} <= pids1, w1
+    assert "P02" not in pids1 and "P03" not in pids1, w1
+
+    risk = generate_data.build_scenario("risk")
+    hits_r = rules.run_all(risk["company_profile"], risk["invoices"], risk["fund_flows"], risk["contracts"])
+    matched_r = policies.match_cards(risk["company_profile"])
+    w_r = policies.linked_warnings(hits_r, matched_r)
+    pids_r = {w["policy_id"] for w in w_r}
+    assert "P01" in pids_r and "P03" in pids_r, w_r
+
+    fuel = generate_data.build_scenario("fuel")
+    hits_f = rules.run_all(fuel["company_profile"], fuel["invoices"], fuel["fund_flows"], fuel["contracts"])
+    matched_f = policies.match_cards(fuel["company_profile"])
+    assert policies.linked_warnings(hits_f, matched_f) == [], policies.linked_warnings(hits_f, matched_f)
+
+    case6 = generate_data.build_scenario("case6")
+    hits6 = rules.run_all(case6["company_profile"], case6["invoices"], case6["fund_flows"], case6["contracts"])
+    matched6 = policies.match_cards(case6["company_profile"])
+    assert policies.linked_warnings(hits6, matched6) == [], policies.linked_warnings(hits6, matched6)
+
+
+def test_39_risk_policy_link_general():
+    case1 = generate_data.build_scenario("case1")
+    hits1 = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
+    matched1 = policies.match_cards(case1["company_profile"])
+    w1 = policies.linked_warnings(hits1, matched1)
+    pids1 = {w["policy_id"] for w in w1}
+    assert {"P01", "P08"} <= pids1, w1
+    assert "P02" not in pids1 and "P03" not in pids1, w1
+
+    risk = generate_data.build_scenario("risk")
+    hits_r = rules.run_all(risk["company_profile"], risk["invoices"], risk["fund_flows"], risk["contracts"])
+    matched_r = policies.match_cards(risk["company_profile"])
+    w_r = policies.linked_warnings(hits_r, matched_r)
+    pids_r = {w["policy_id"] for w in w_r}
+    assert "P01" in pids_r and "P03" in pids_r, w_r
+
+    fuel = generate_data.build_scenario("fuel")
+    hits_f = rules.run_all(fuel["company_profile"], fuel["invoices"], fuel["fund_flows"], fuel["contracts"])
+    matched_f = policies.match_cards(fuel["company_profile"])
+    assert policies.linked_warnings(hits_f, matched_f) == [], policies.linked_warnings(hits_f, matched_f)
+
+    case6 = generate_data.build_scenario("case6")
+    hits6 = rules.run_all(case6["company_profile"], case6["invoices"], case6["fund_flows"], case6["contracts"])
+    matched6 = policies.match_cards(case6["company_profile"])
+    assert policies.linked_warnings(hits6, matched6) == [], policies.linked_warnings(hits6, matched6)
+
+
 def main():
     case(1, "税负率明显低于行业参考区间 → R12 高", test_01_tax_burden_low)
     case(2, "销项软件、进项全餐饮 → R04", test_02_input_output_mismatch)
@@ -467,6 +521,7 @@ def main():
     case(36, "政策明细清晰（P01数值/P02全满足/P08下一步）", test_36_policy_detail_clarity)
     case(37, "P01/P02 互斥择优（二选一）", test_37_policy_exclusivity)
     case(38, "R19 合并 R17 不重复计分", test_38_rule_hierarchy_merge)
+    case(39, "风险-政策联动为通用机制（多场景验证）", test_39_risk_policy_link_general)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

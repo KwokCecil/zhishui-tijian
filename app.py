@@ -363,14 +363,8 @@ if not_usable:
         for m in not_usable:
             st.markdown(f"- {m['title']}（{m['doc_number']}）：{m['detail']}｜{m['note']}")
 
-risk_ids = {h["rule_id"] for h in hits}
-p01_usable = any(m["policy_id"] == "P01" and m["status"] != "不适用" for m in matched)
-if risk_ids & {"R17", "R19", "R35"} and p01_usable:
-    st.warning(
-        "⚠️ 风险与政策联动：本报告的临界风险针对“小微临界”——企业申报数据可能经过调减贴近300万线；"
-        "“可享受小微优惠”的前提是申报数据真实、符合小微条件。"
-        "建议先按 R19/R35 的备查清单自查申报真实性，确认无误后再享受优惠。"
-    )
+for w in policies.linked_warnings(hits, matched):
+    st.warning(f"⚠️ 风险与政策联动（{w['title']}）：{w['text']}")
 
 # ---- 行动建议 ----
 st.subheader("行动建议")

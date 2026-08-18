@@ -13,6 +13,31 @@ import pandas as pd
 FIELD_ALIASES = {"从业人数": "个税申报人数"}
 NEGATIVE_INDUSTRIES = ["烟草制造业", "住宿和餐饮业", "批发和零售业", "房地产业", "租赁和商务服务业", "娱乐业"]
 
+# 政策 ↔ 风险规则映射：某项政策可享受时，若命中相关风险特征，
+# 应提示"享受前提"（先自查、后享受）。这是通用机制，不针对具体案例。
+POLICY_RISK_LINKS = {
+    "P01": {
+        "title": "小型微利企业低税率",
+        "rules": ["R17", "R19", "R35"],
+        "text": "命中与小微资格相关的风险特征（{}）。“可享受小微优惠”的前提是申报数据真实、符合小微条件；请先按备查清单自查申报真实性，确认无误后再享受。",
+    },
+    "P08": {
+        "title": "六税两费减半征收",
+        "rules": ["R17", "R19", "R35"],
+        "text": "命中与小微资格相关的风险特征（{}）。六税两费减半以符合小微条件为前提，请先核实申报真实性后再确认享受。",
+    },
+    "P02": {
+        "title": "高新技术企业减按15%",
+        "rules": ["R30"],
+        "text": "命中资格-优惠不匹配风险（{}）。高新优惠享受前提是高企资格真实有效；请先完成资格复核，未确认前不享受。",
+    },
+    "P03": {
+        "title": "研发费用加计扣除100%",
+        "rules": ["R20"],
+        "text": "命中研发加计占比异常（{}）。享受研发加计前提是研发活动真实、费用归集合规；请先核对立项文件与辅助账。",
+    },
+}
+
 
 def load_cards(path=None):
     if path is None:
@@ -192,6 +217,25 @@ def _apply_exclusivity(results):
             "与小型微利企业5%税率互斥；若小微条件成立，小微更优，本项仅作备选"
         )
     return results
+
+
+def linked_warnings(hits, matched):
+    """风险-政策联动：返回应提示“享受前提”的政策列表（通用机制）。"""
+    risk_ids = {h.get("rule_id") for h in hits}
+    usable = {m.get("policy_id") for m in matched if m.get("status") != "不适用"}
+    out = []
+    for pid, link in POLICY_RISK_LINKS.items():
+        if pid not in usable:
+            continue
+        hit_rules = sorted(risk_ids & set(link["rules"]))
+        if hit_rules:
+            out.append({
+                "policy_id": pid,
+                "title": link["title"],
+                "rules": hit_rules,
+                "text": link["text"].format("、".join(hit_rules)),
+            })
+    return out
 
 
 def small_micro_status(profile):
