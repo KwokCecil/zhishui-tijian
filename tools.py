@@ -58,7 +58,7 @@ def tool(name, description, parameters, required):
 @tool(
     "run_tax_health_check",
     "对企业进行税务健康检查：输入企业指标、发票、资金流水、合同（均为 JSON），"
-    "运行 28 条风险规则，返回命中特征清单、体检得分、风险等级和监管视角 Top3。"
+    "运行 29 条风险规则，返回命中特征清单、风险指数、风险等级和监管视角 Top3。"
     "判定完全由规则完成，结果带特征ID与证据，可溯源。",
     {
         "type": "object",

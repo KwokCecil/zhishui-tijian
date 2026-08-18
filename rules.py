@@ -355,19 +355,44 @@ def check_r18(profile):
     return _rule("R18", "利润与申报应纳税所得额差异过大", False, "中", f"税会差异率 {diff:.0f}%（阈值50%）", "")
 
 
+def _big_deduction(profile):
+    """大额调减项（演示界定）：研发费用>0 且研发费用 ≥ 应纳税所得额 × 50%。
+    实际场景中大额调减还可能来自其他调减项目，生产环境需按调减明细校准。"""
+    rd = _num(profile.get("研发费用(万元)"))
+    taxable = _num(profile.get("应纳税所得额(万元)"))
+    return rd is not None and taxable is not None and rd > 0 and rd >= taxable * 0.5
+
+
+def check_r39(profile):
+    """R39 大额调减项（低危提示）：单独出现不判定违规，只提示备查。"""
+    rd = _num(profile.get("研发费用(万元)"))
+    taxable = _num(profile.get("应纳税所得额(万元)"))
+    if rd is None or taxable is None:
+        return _rule("R39", "大额调减项", False, "低", "研发费用或应纳税所得额缺失", "")
+    if _big_deduction(profile):
+        return _rule(
+            "R39", "大额调减项", True, "低",
+            f"研发费用 {rd:.0f}万 ≥ 应纳税所得额 {taxable:.1f}万的50%（{taxable*0.5:.1f}万），构成大额调减（演示口径）",
+            "大额调减本身不违规：备查调减依据（研发立项、费用归集、辅助账、其他调减项目凭证），"
+            "与临界组合时风险升级。",
+        )
+    return _rule("R39", "大额调减项", False, "低", f"未达大额调减演示阈值（研发≥所得×50%）", "")
+
+
 def check_r19(profile):
-    """R19 临界点聚集：所得额落于小微限额85%-100%且存在大额调减项（演示：研发费用>0）。"""
+    """R19 临界点聚集（复合）：所得额落于小微限额85%-100% 且 大额调减项命中。"""
     taxable = _num(profile.get("应纳税所得额(万元)"))
     rd = _num(profile.get("研发费用(万元)"))
     if taxable is None or rd is None:
         return _rule("R19", "临界点聚集", False, "中", "应纳税所得额或研发费用缺失", "")
-    if 255 <= taxable <= 300 and rd > 0:
+    if 255 <= taxable <= 300 and _big_deduction(profile):
         return _rule(
             "R19", "临界点聚集", True, "中",
-            f"应纳税所得额 {taxable:.1f}万（位于300万限额的85%-100%），且研发费用 {rd:.0f}万（大额调减项）",
+            f"应纳税所得额 {taxable:.1f}万（位于300万限额的85%-100%）+ 大额调减项（研发费用 {rd:.0f}万，"
+            f"≥ 所得额50%）",
             "临界点聚集（拆户/调减规避）是团伙虚开与偷逃税核查重点；备查研发立项、费用归集、辅助账。",
         )
-    return _rule("R19", "临界点聚集", False, "中", "未同时命中临界区间与大额调减", "")
+    return _rule("R19", "临界点聚集", False, "中", "未同时命中所得临界区间与大额调减", "")
 
 
 def check_r20(profile):
@@ -629,8 +654,33 @@ def check_r38(invoices, fund_flows):
     return _rule("R38", "收购发票与业务流不匹配", False, "高", "收购发票对象与付款对象一致", "")
 
 
-# 规则注册表：依次执行，保持稳定顺序
-RULE_CHECKS = [
+# 规则分类与编号（稳定标识，按主题分组；新规则按主题追加，不重排历史编号）
+RULE_CATEGORIES = {
+    "发票异常": ["R01", "R02", "R03", "R04", "R05"],
+    "资金与三流": ["R06", "R07", "R08"],
+    "上下游传导": ["R09", "R10", "R11"],
+    "申报与财务": ["R12", "R13", "R14"],
+    "人资与信用": ["R15", "R16", "R17"],
+    "案例启发": ["R18", "R19", "R20", "R35", "R39"],
+    "加油站模板": ["R21", "R22", "R23"],
+    "团伙虚开": ["R24", "R25", "R26", "R27", "R28", "R29"],
+    "资格-优惠联动": ["R30"],
+    "数据质量": ["R31", "R32", "R33", "R34"],
+    "农产品收购": ["R36", "R37", "R38"],
+}
+CATEGORY_ORDER = list(RULE_CATEGORIES)
+CATEGORY_OF = {rid: cat for cat, ids in RULE_CATEGORIES.items() for rid in ids}
+
+# 组合规则：由原子规则推导，命中时原子规则并入组合结果，不重复计分
+COMBO_RULES = {
+    "R19": {
+        "depends_on": ["R17", "R39"],
+        "label": "组合规则（R17 小微临界 + R39 大额调减）",
+    },
+}
+
+# 规则注册表（未排序），执行顺序按分类分组、组内按编号
+_RULES = [
     ("R01", "顶额开票", "高", check_r01),
     ("R02", "月末集中开票", "中", check_r02),
     ("R03", "红冲/作废率过高", "中", check_r03),
@@ -645,6 +695,7 @@ RULE_CHECKS = [
     ("R18", "利润与申报应纳税所得额差异过大", "中", check_r18),
     ("R19", "临界点聚集", "中", check_r19),
     ("R20", "研发加计扣除占比异常", "中", check_r20),
+    ("R39", "大额调减项", "低", check_r39),
     ("R21", "单站销售横向偏离", "中", check_r21),
     ("R22", "多源数据不一致", "高", check_r22),
     ("R23", "申报单价偏离区域均价", "中", check_r23),
@@ -660,6 +711,11 @@ RULE_CHECKS = [
     ("R37", "单户收购金额异常", "中", check_r37),
     ("R38", "收购发票与业务流不匹配", "高", check_r38),
 ]
+
+RULE_CHECKS = sorted(
+    _RULES,
+    key=lambda r: (CATEGORY_ORDER.index(CATEGORY_OF.get(r[0], "其他")), int(r[0][1:])),
+)
 
 
 def run_all(profile, invoices, fund_flows=None, contracts=None):
@@ -689,22 +745,32 @@ def run_all(profile, invoices, fund_flows=None, contracts=None):
         except Exception as exc:  # 单条规则失败不阻断整体
             result = _rule(rule_id, name, False, default_level, f"规则执行异常：{exc}", "")
         if result.get("hit"):
+            result["category"] = CATEGORY_OF.get(rule_id, "其他")
+            if rule_id in COMBO_RULES:
+                result["kind"] = "combo"
+                result["depends_on"] = COMBO_RULES[rule_id]["depends_on"]
             hits.append(result)
     return _merge_dependent_rules(hits)
 
 
 def _merge_dependent_rules(hits):
-    """规则层级合并：R19 临界点聚集是 R17 小微临界的升级，
-    同时命中时把 R17 并入 R19，避免重复计分。"""
+    """组合规则合并：组合规则命中时，把其原子依赖并入组合结果，避免重复计分。"""
     by_id = {h["rule_id"]: h for h in hits}
-    if "R19" in by_id and "R17" in by_id:
-        r17 = by_id["R17"]
-        r19 = by_id["R19"]
-        r17["merged_into"] = "R19"
-        r19["evidence"] = f"{r19['evidence']}；临界项：{r17['evidence']}"
-        r19["suggestion"] = (
-            f"{r19['suggestion']}（本特征已合并 R17 小微临界提示，不重复计分）"
-        )
+    for rid, meta in COMBO_RULES.items():
+        combo = by_id.get(rid)
+        if not combo:
+            continue
+        merged = []
+        for dep in meta["depends_on"]:
+            sub = by_id.get(dep)
+            if sub:
+                sub["merged_into"] = rid
+                combo["evidence"] = f"{combo['evidence']}；{dep}项：{sub['evidence']}"
+                merged.append(dep)
+        if merged:
+            combo["suggestion"] = (
+                f"{combo['suggestion']}（已合并 {'、'.join(merged)} 提示，不重复计分）"
+            )
     return hits
 
 

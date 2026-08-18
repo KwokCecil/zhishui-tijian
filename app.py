@@ -93,7 +93,7 @@ SCENARIO_GUIDE = {
     "case1": {
         "企业画像": "光伏产业链设备企业：收入1.2亿、约120人、资产3200万、应税所得292.7万、研发加计600万。",
         "风险种子": "应税所得逼近300万临界，收入与利润严重不匹配。",
-        "预期结论": "高风险，指数70，触发 R17+R19+R35 组合预警。",
+        "预期结论": "高风险，指数65，触发小微临界×收入利润不匹配组合。",
     },
     "case6": {
         "企业画像": "莲子加工企业：收购发票含贩子对象、单户超500万、付款与开票对象不一致。",
@@ -134,7 +134,13 @@ def profile_summary(profile):
 
 
 def status_badge(status):
-    cls = {"可享受": "badge-ok", "需人工确认": "badge-warn", "不适用": "badge-no"}.get(status, "badge-no")
+    cls = {
+        "可享受": "badge-ok",
+        "需人工确认": "badge-warn",
+        "不适用": "badge-no",
+        "命中限制": "badge-no",
+        "未触发限制": "badge-low",
+    }.get(status, "badge-no")
     return f'<span class="status-badge {cls}">{status}</span>'
 
 
@@ -202,7 +208,7 @@ if data is None:
     st.markdown(
         "### 使用说明\n\n"
         "1. 左侧选择**内置演示场景**（推荐先跑 `risk`）或上传四类 CSV；\n"
-        "2. 系统运行 28 条风险规则 → 风险评分 → 政策卡片匹配；\n"
+        "2. 系统运行 29 条风险规则 → 风险评分 → 政策卡片匹配；\n"
         "3. 输出：体检得分 + 等级 + 命中特征 + 监管视角 Top3 + 政策机会 + 行动建议。\n\n"
         "判定全部由规则完成（可溯源），LLM 只负责报告与对话（下方 Agent 对话可演示工具调用链路）。"
     )
@@ -239,7 +245,7 @@ else:
 
 # ---- 指标卡 ----
 lvl_cls = level_class(summary["level"])
-usable_count = sum(1 for m in matched if m["status"] != "不适用")
+usable_count = sum(1 for m in matched if m["status"] in ("可享受", "需人工确认"))
 st.markdown(
     f"""
     <div class="metric-row">
@@ -274,7 +280,7 @@ with st.expander("风险指数和风险等级是怎么算的"):
     st.markdown(
         "**风险指数** = 基础分 + 组合加成（封顶 100）。\n\n"
         "基础分：高危 45 分/条、中危 20 分/条、低危/提示 5 分/条。\n"
-        "组合加成仅一条：R17+R19+R35 关键预警组合 +25。\n\n"
+        "组合加成仅一条：小微临界家族（R17 或 R19）+ R35 收入利润不匹配 +25。\n\n"
         f"本次命中 {len(bd['rows'])} 条，基础分 {bd['base']}；组合加成：{bonus_text}；"
         f"合计 = **{bd['total']} / 100**。"
     )
@@ -310,9 +316,17 @@ if hits:
             f'<br><span class="note">🔗 已并入 {h["merged_into"]}，不重复计分</span>'
             if h.get("merged_into") else ""
         )
+        combo_badge = (
+            f'<span class="status-badge badge-mid">组合规则</span>'
+            if h.get("kind") == "combo" else ""
+        )
+        cat_tag = (
+            f'<span style="font-size:.9rem;color:#64748b;margin-left:6px">[{h.get("category", "")}]</span>'
+            if h.get("category") else ""
+        )
         st.markdown(
             f'<div class="hit-row">{level_badge(h["level"])}'
-            f'<b>{h["rule_id"]} {h["name"]}</b>{merge_note}<br>'
+            f'<b>{h["rule_id"]} {h["name"]}</b>{combo_badge}{cat_tag}{merge_note}<br>'
             f'<span class="cond">📌 证据：{h["evidence"]}</span><br>'
             f'<span class="cond">💡 建议：{h["suggestion"]}</span></div>',
             unsafe_allow_html=True,
@@ -325,10 +339,11 @@ st.subheader("优惠政策清单")
 st.markdown(
     "判定流程：① 逐项核对条件（✅ 满足 / ❌ 不满足 / ❓ 数据缺失）→ "
     "② 全部满足且无需资质 = **可享受**；③ 条件满足但需资质/材料 = **需人工确认**"
-    "（卡片内写明下一步做什么）；④ 任一条件不满足 = **不适用**。"
+    "（卡片内写明下一步做什么）；④ 任一条件不满足 = **不适用**；"
+    "限制规则（负面清单）单独判定：命中 = 不得享受，未触发 = 不影响。"
 )
-usable = [m for m in matched if m["status"] != "不适用"]
-not_usable = [m for m in matched if m["status"] == "不适用"]
+usable = [m for m in matched if m["status"] in ("可享受", "需人工确认", "命中限制")]
+not_usable = [m for m in matched if m["status"] in ("不适用", "未触发限制")]
 if usable:
     for m in usable:
         cond_lines = []
@@ -338,7 +353,10 @@ if usable:
                 f"{mark} {c['field']}：当前 {c['value']}（要求 {c['requirement']}）"
             )
         cond_html = "<br>".join(cond_lines) if cond_lines else "需人工核对资格材料"
-        note_label = "下一步" if m["status"] == "需人工确认" else "说明"
+        note_label = {
+            "需人工确认": "下一步",
+            "命中限制": "影响",
+        }.get(m["status"], "说明")
         notes = []
         if m.get("exclusive_note"):
             notes.append(f'<div class="note">🔁 互斥说明：{m["exclusive_note"]}</div>')
@@ -359,7 +377,7 @@ if usable:
 else:
     st.info("未匹配到可关注政策。")
 if not_usable:
-    with st.expander(f"不适用政策（{len(not_usable)} 条）"):
+    with st.expander(f"不适用 / 未触发限制（{len(not_usable)} 条）"):
         for m in not_usable:
             st.markdown(f"- {m['title']}（{m['doc_number']}）：{m['detail']}｜{m['note']}")
 

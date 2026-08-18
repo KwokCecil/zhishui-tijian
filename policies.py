@@ -80,6 +80,9 @@ def _eval_condition(cond, p):
         raw = revenue / 12
     elif field == "小型微利企业":
         raw = "是" if _small_micro_qualified(p)[0] else "否"
+    elif field == "六税两费适用":
+        taxpayer = str(p.get("纳税人类型", "")).strip()
+        raw = "是" if taxpayer in ("小规模纳税人", "个体工商户") or _small_micro_qualified(p)[0] else "否"
     else:
         raw = p.get(field)
 
@@ -121,6 +124,11 @@ def _cond_value(cond, p):
         return f"{revenue/12:.1f}" if revenue is not None else "缺失"
     if field == "小型微利企业":
         return "是（符合演示口径）" if _small_micro_qualified(p)[0] else "否"
+    if field == "六税两费适用":
+        taxpayer = str(p.get("纳税人类型", "")).strip()
+        if taxpayer in ("小规模纳税人", "个体工商户") or _small_micro_qualified(p)[0]:
+            return "是（小规模纳税人/个体工商户，或符合小微条件）"
+        return "否"
     raw = p.get(field)
     if raw is None or (isinstance(raw, str) and raw.strip() == ""):
         return "缺失"
@@ -148,19 +156,15 @@ def match_cards(profile, cards=None):
                 "detail": "需人工核对资格/材料",
             })
             continue
-        matched = 0
-        unknown = 0
         detail = []
         cond_results = []
         for cond in conditions:
             r = _eval_condition(cond, p)
             if r is True:
-                matched += 1
                 detail.append(f"{cond['field']} ✓")
             elif r is False:
                 detail.append(f"{cond['field']} ✗")
             else:
-                unknown += 1
                 detail.append(f"{cond['field']} ?（数据缺失）")
             cond_results.append({
                 "field": cond["field"],
@@ -168,30 +172,41 @@ def match_cards(profile, cards=None):
                 "value": _cond_value(cond, p),
                 "requirement": f"{cond.get('op')} {cond.get('value')}{cond.get('unit', '')}",
             })
-        if unknown and matched + 0 == 0:
-            status = "需人工确认"
-        elif matched == len(conditions):
-            status = "可享受" if card.get("ruleable") == "可规则" else "需人工确认"
-        elif matched > 0 or unknown > 0:
-            status = "需人工确认"
-        else:
-            status = "不适用"
+        passes = [c["pass"] for c in cond_results]
+        has_false = any(p is False for p in passes)
         unknown_fields = [c["field"] for c in cond_results if c["pass"] is None]
-        if status == "需人工确认":
+        kind = card.get("kind", "benefit")
+        if kind == "restriction":
             if unknown_fields:
+                status = "需人工确认"
                 note = f"数据缺失：需补充【{'、'.join(unknown_fields)}】后再判定"
-            elif card.get("manual_reason"):
-                note = f"条件已满足，下一步：{card['manual_reason']}"
+            elif passes and passes[0] is True:
+                status = "命中限制"
+                note = "行业在研发加计负面清单内，不得享受研发费用加计扣除"
             else:
-                note = "条件已满足，需人工确认后享受"
-        elif status == "可享受":
-            note = "条件全部满足（演示口径），申报时以税务机关口径为准"
+                status = "未触发限制"
+                note = "行业不在负面清单内，不影响享受研发费用加计扣除；本卡为限制规则，不产生优惠"
         else:
-            note = "未满足条件，不享受该项"
+            if has_false:
+                status = "不适用"
+                note = "未满足条件，不享受该项"
+            elif unknown_fields:
+                status = "需人工确认"
+                note = f"数据缺失：需补充【{'、'.join(unknown_fields)}】后再判定"
+            elif all(p is True for p in passes):
+                status = "可享受" if card.get("ruleable") == "可规则" else "需人工确认"
+                if status == "需人工确认":
+                    note = f"条件已满足，下一步：{card.get('manual_reason', '人工确认后享受')}"
+                else:
+                    note = "条件全部满足（演示口径），申报时以税务机关口径为准"
+            else:
+                status = "需人工确认"
+                note = "条件部分满足，需人工确认实际情况"
         results.append({
             "policy_id": card.get("policy_id"),
             "title": card.get("title"),
             "status": status,
+            "kind": kind,
             "doc_number": card.get("doc_number", ""),
             "benefit": card.get("benefit", ""),
             "detail": "；".join(detail),
@@ -222,7 +237,7 @@ def _apply_exclusivity(results):
 def linked_warnings(hits, matched):
     """风险-政策联动：返回应提示“享受前提”的政策列表（通用机制）。"""
     risk_ids = {h.get("rule_id") for h in hits}
-    usable = {m.get("policy_id") for m in matched if m.get("status") != "不适用"}
+    usable = {m.get("policy_id") for m in matched if m.get("status") in ("可享受", "需人工确认")}
     out = []
     for pid, link in POLICY_RISK_LINKS.items():
         if pid not in usable:

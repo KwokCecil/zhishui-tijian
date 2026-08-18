@@ -376,11 +376,11 @@ def test_34_case1_level_high():
     assert summary["level"] == "高风险", summary
     assert summary["score"] == 65, summary
     assert summary["breakdown"]["base"] == 40, summary["breakdown"]
-    assert any("R17+R19+R35" in name for name, _ in summary["breakdown"]["bonuses"]), summary["breakdown"]
+    assert any("R17/R19 + R35" in name for name, _ in summary["breakdown"]["bonuses"]), summary["breakdown"]
     r17 = rule(hits, "R17")
     assert r17.get("merged_into") == "R19", r17
     r19 = rule(hits, "R19")
-    assert "临界项" in r19["evidence"], r19
+    assert "R17项" in r19["evidence"] and "R39项" in r19["evidence"], r19
 
 
 def test_35_case6_level_high():
@@ -425,7 +425,42 @@ def test_38_rule_hierarchy_merge():
     assert summary["hit_count"] == 2, summary  # R19（含R17）+ R35
     r17 = rule(hits, "R17")
     assert r17["merged_into"] == "R19", r17
+    r39 = rule(hits, "R39")
+    assert r39["merged_into"] == "R19", r39
     assert summary["by_level"]["低"] == 0, summary["by_level"]
+
+
+def test_42_big_deduction_standalone():
+    # risk 场景：研发300万 ≥ 所得98.5万×50% → R39 单独命中（R19 未触发，不合并）
+    risk = generate_data.build_scenario("risk")
+    hits = rules.run_all(risk["company_profile"], risk["invoices"], risk["fund_flows"], risk["contracts"])
+    r39 = rule(hits, "R39")
+    assert r39["hit"] and r39.get("merged_into") is None, r39
+    assert not any(h["rule_id"] == "R19" for h in hits), [h["rule_id"] for h in hits]
+
+    # fuel 场景：无研发费用 → R39 不命中
+    fuel = generate_data.build_scenario("fuel")
+    hits_f = rules.run_all(fuel["company_profile"], fuel["invoices"], fuel["fund_flows"], fuel["contracts"])
+    assert not any(h["rule_id"] == "R39" for h in hits_f), [h["rule_id"] for h in hits_f]
+
+
+def test_43_rule_metadata_category_order():
+    assert rules.CATEGORY_OF["R01"] == "发票异常", rules.CATEGORY_OF
+    assert rules.CATEGORY_OF["R39"] == "案例启发", rules.CATEGORY_OF
+    assert rules.COMBO_RULES["R19"]["depends_on"] == ["R17", "R39"], rules.COMBO_RULES
+
+    order = [r[0] for r in rules.RULE_CHECKS]
+    # 按分类排序：发票异常 < 资金与三流 < ... < 农产品收购
+    assert order.index("R01") < order.index("R06") < order.index("R36")
+    # 案例启发类（R35/R39）排在加油站模板（R21）之前
+    assert order.index("R39") < order.index("R21"), order
+
+    case1 = generate_data.build_scenario("case1")
+    hits = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
+    r19 = rule(hits, "R19")
+    assert r19.get("kind") == "combo", r19
+    assert r19.get("depends_on") == ["R17", "R39"], r19
+    assert r19.get("category") == "案例启发", r19
 
 
 def test_39_risk_policy_link_general():
@@ -453,6 +488,46 @@ def test_39_risk_policy_link_general():
     hits6 = rules.run_all(case6["company_profile"], case6["invoices"], case6["fund_flows"], case6["contracts"])
     matched6 = policies.match_cards(case6["company_profile"])
     assert policies.linked_warnings(hits6, matched6) == [], policies.linked_warnings(hits6, matched6)
+
+
+def test_40_policy_status_no_false_usable():
+    case1 = generate_data.build_scenario("case1")
+    matched1 = policies.match_cards(case1["company_profile"])
+    by_id = {m["policy_id"]: m for m in matched1}
+    # 软件即征即退：制造业 + 非自研软件 → 明确不满足，不应出现在可关注里
+    assert by_id["P05"]["status"] == "不适用", by_id["P05"]
+    assert all(c["pass"] is not None for c in by_id["P05"]["conditions"]), by_id["P05"]
+
+    # 六税两费：小规模纳税人同样适用（不只小微）
+    small = profile({
+        "行业": "软件和信息技术服务业", "纳税人类型": "小规模纳税人",
+        "个税申报人数": 5, "社保参保人数": 5, "资产总额(万元)": 500,
+        "营业收入(万元)": 200, "应纳税所得额(万元)": 50,
+    })
+    p08_small = {m["policy_id"]: m for m in policies.match_cards(small)}["P08"]
+    assert p08_small["status"] == "需人工确认", p08_small
+    assert p08_small["conditions"][0]["pass"] is True, p08_small
+
+    # 一般纳税人且不符合小微 → 六税两费不适用
+    case6 = generate_data.build_scenario("case6")
+    p08_case6 = {m["policy_id"]: m for m in policies.match_cards(case6["company_profile"])}["P08"]
+    assert p08_case6["status"] == "不适用", p08_case6
+
+
+def test_41_restriction_card_semantics():
+    case1 = generate_data.build_scenario("case1")
+    p04 = {m["policy_id"]: m for m in policies.match_cards(case1["company_profile"])}["P04"]
+    assert p04["status"] == "未触发限制", p04
+    assert "负面清单" in p04["note"] and "限制" in p04["note"], p04
+
+    wholesale = profile({
+        "行业": "批发和零售业", "纳税人类型": "一般纳税人",
+        "个税申报人数": 50, "资产总额(万元)": 1000,
+        "营业收入(万元)": 3000, "应纳税所得额(万元)": 200,
+    })
+    p04_hit = {m["policy_id"]: m for m in policies.match_cards(wholesale)}["P04"]
+    assert p04_hit["status"] == "命中限制", p04_hit
+    assert "不得享受" in p04_hit["note"], p04_hit
 
 
 def test_39_risk_policy_link_general():
@@ -522,6 +597,10 @@ def main():
     case(37, "P01/P02 互斥择优（二选一）", test_37_policy_exclusivity)
     case(38, "R19 合并 R17 不重复计分", test_38_rule_hierarchy_merge)
     case(39, "风险-政策联动为通用机制（多场景验证）", test_39_risk_policy_link_general)
+    case(40, "条件不满足即不适用/六税两费含小规模纳税人", test_40_policy_status_no_false_usable)
+    case(41, "负面清单按限制规则判定（未触发/命中）", test_41_restriction_card_semantics)
+    case(42, "R39 大额调减项可单独命中（低危原子规则）", test_42_big_deduction_standalone)
+    case(43, "规则分类编号与组合规则元数据", test_43_rule_metadata_category_order)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

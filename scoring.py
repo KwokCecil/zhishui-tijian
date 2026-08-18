@@ -12,10 +12,12 @@ LEVEL_RANK = {"高": 3, "中": 2, "低": 1, "提示": 1}
 
 
 def _bonuses(hits):
-    """组合加成：仅 R17+R19+R35 关键预警组合。"""
+    """组合加成：小微临界家族（R17 或 R19）+ 收入利润不匹配（R35）。
+    R19 合并 R17 后，组合按“家族+关联特征”判定，不重复计算已并入的 R17。"""
     ids = {h.get("rule_id") for h in hits}
-    if {"R17", "R19", "R35"}.issubset(ids):
-        return [("关键预警组合 R17+R19+R35", 25)]
+    small_micro = ids & {"R17", "R19"}
+    if small_micro and "R35" in ids:
+        return [("小微临界×收入利润不匹配组合（R17/R19 + R35）", 25)]
     return []
 
 
