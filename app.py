@@ -46,12 +46,11 @@ st.markdown(
       .pill-ok {background: #dcfce7; color: #15803d;}
       .pill-warn {background: #fef3c7; color: #b45309;}
       .pill-no {background: #fee2e2; color: #b91c1c;}
-      .row {border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px;
-            margin-bottom: 8px; line-height: 1.6;}
+      .row {background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px;
+            padding: 10px 14px; margin-bottom: 8px; line-height: 1.6; color: #0f172a;}
       .muted {font-size: .82rem; color: #6b7280; margin-left: 6px;}
       .cond {font-size: .92rem; color: #1f2937;}
       .note {font-size: .88rem; color: #7c2d12;}
-      .row {color: #0f172a;}
       .scenario-box {background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px;
                      padding: 10px 14px; margin: .4rem 0 1rem; font-size: .95rem;
                      line-height: 1.7; color: #0f172a;}
@@ -82,12 +81,12 @@ SCENARIO_GUIDE = {
     "case1": {
         "企业画像": "光伏产业链设备企业：收入1.2亿、约120人、资产3200万、应税所得292.7万、研发加计600万。",
         "风险种子": "应税所得逼近300万临界，收入与利润严重不匹配。",
-        "预期结论": "高风险，指数65，触发小微临界×收入利润不匹配组合。",
+        "预期结论": "高风险，指数60，组合预警链触发。",
     },
     "case6": {
         "企业画像": "莲子加工企业：收购发票含贩子对象、单户超500万、付款与开票对象不一致。",
         "风险种子": "收购对象身份存疑、单户金额异常、业务流不匹配。",
-        "预期结论": "高风险，指数65。",
+        "预期结论": "高风险，指数80。",
     },
 }
 
@@ -322,8 +321,8 @@ if not any_advice:
 with st.expander("指数怎么算"):
     bd = summary["breakdown"]
     st.markdown(
-        f"基础分 {bd['base']}" + (f" + 组合加成 25" if bd["bonuses"] else "") +
-        f" = {bd['total']}，等级阈值：60 高风险 / 20 中风险 / 20 以下低风险"
+        f"分数 = 命中规则点数之和，点数：高 60 / 中 20 / 低 5。"
+        f"本次合计 {bd['total']}，等级阈值：≥60 高风险，20-59 中风险，<20 低风险。"
     )
     if bd["rows"]:
         st.dataframe(

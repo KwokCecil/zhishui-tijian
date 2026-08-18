@@ -379,7 +379,7 @@ def check_r39(profile):
     return _rule("R602", "大额调减项", False, "低", f"未达大额调减演示阈值（研发≥所得×50%）", "")
 
 
-def check_r19(profile):
+def check_r19(profile, hits=None):
     """G001 临界点聚集（组合规则）：所得额落于小微限额85%-100% 且 大额调减项命中。"""
     taxable = _num(profile.get("应纳税所得额(万元)"))
     rd = _num(profile.get("研发费用(万元)"))
@@ -393,6 +393,18 @@ def check_r19(profile):
             "临界点聚集（拆户/调减规避）是团伙虚开与偷逃税核查重点；备查研发立项、费用归集、辅助账。",
         )
     return _rule("G001", "临界点聚集", False, "中", "未同时命中所得临界区间与大额调减", "")
+
+
+def check_g002(profile, hits):
+    """G002 小微临界预警链：G001 临界点聚集 + R604 收入利润不匹配 同时命中。"""
+    ids = {h.get("rule_id") for h in hits}
+    if "G001" in ids and "R604" in ids:
+        return _rule(
+            "G002", "小微临界预警链", True, "高",
+            "临界点聚集 G001 与收入利润不匹配 R604 同时命中，构成完整预警链",
+            "核实申报真实性并准备备查资料；确认无误后再享受小微优惠，风险处置与合规降负双轨并行。",
+        )
+    return _rule("G002", "小微临界预警链", False, "高", "未同时命中 G001 与 R604", "")
 
 
 def check_r20(profile):
@@ -680,6 +692,13 @@ COMBO_RULES = {
         "label": "R601 小微临界 + R602 大额调减",
         "check": check_r19,
     },
+    "G002": {
+        "name": "小微临界预警链",
+        "level": "高",
+        "depends_on": ["G001", "R604"],
+        "label": "G001 临界点聚集 + R604 收入利润不匹配",
+        "check": check_g002,
+    },
 }
 
 # 规则注册表（未排序），执行顺序按分类分组、组内按编号
@@ -752,7 +771,7 @@ def run_all(profile, invoices, fund_flows=None, contracts=None):
     # 组合规则：独立于原子规则执行，单独编号（G001…）
     for combo_id, meta in COMBO_RULES.items():
         try:
-            result = meta["check"](p)
+            result = meta["check"](p, hits)
         except Exception as exc:  # noqa: BLE001
             result = _rule(combo_id, meta["name"], False, meta["level"], f"规则执行异常：{exc}", "")
         if result.get("hit"):

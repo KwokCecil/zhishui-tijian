@@ -1,44 +1,32 @@
 # -*- coding: utf-8 -*-
 """风险指数（演示版，0-100，越高越危险）。
 
-基础分：高危 45 分/条、中危 20 分/条、低危/提示 5 分/条。
-组合加成仅一条：命中小微临界家族（R601 或 G001）+ R604 +25（两条低/中危也能构成严重风险）。
+分数 = 命中规则点数之和，封顶 100。
+点数：高危 60 分/条、中危 20 分/条、低危/提示 5 分/条。
 等级由指数直接推导：≥60 高风险；20-59 中风险；<20 低风险。
+组合升级由规则层完成（G 系列组合规则自带级别与点数），评分层不做任何加成。
 口径均为演示值，报告和页面需标注。
 """
 
-RISK_POINTS = {"高": 45, "中": 20, "低": 5, "提示": 5}
+RISK_POINTS = {"高": 60, "中": 20, "低": 5, "提示": 5}
 LEVEL_RANK = {"高": 3, "中": 2, "低": 1, "提示": 1}
 
 
-def _bonuses(hits):
-    """组合加成：小微临界家族（R601 或 G001）+ 收入利润不匹配（R604）。
-    组合规则按“家族+关联特征”判定，不重复计算已并入的原子规则。"""
-    ids = {h.get("rule_id") for h in hits}
-    small_micro = (ids & {"R601"}) or ("G001" in ids)
-    if small_micro and "R604" in ids:
-        return [("小微临界×收入利润不匹配组合（R601/G001 + R604）", 25)]
-    return []
-
-
 def risk_index(hits):
-    """返回 (基础分, 组合加成列表, 风险指数)。"""
+    """返回风险指数：未并入其他规则的特征点数之和，封顶 100。"""
     counted = [h for h in hits if not h.get("merged_into")]
-    base = sum(RISK_POINTS.get(h.get("level", "低"), 3) for h in counted)
-    bonuses = _bonuses(hits)
-    total = min(100, base + sum(b for _, b in bonuses))
-    return base, bonuses, total
+    return min(100, sum(RISK_POINTS.get(h.get("level", "低"), 5) for h in counted))
 
 
 def risk_score(hits):
     """兼容接口：返回 (风险指数, 等级)。"""
-    base, bonuses, total = risk_index(hits)
+    total = risk_index(hits)
     return total, risk_level(hits)
 
 
 def risk_level(hits):
     """等级由风险指数直接推导，与指数完全一致。"""
-    total = risk_index(hits)[2]
+    total = risk_index(hits)
     if total >= 60:
         return "高风险"
     if total >= 20:
@@ -48,10 +36,7 @@ def risk_level(hits):
 
 def level_reason(hits):
     """指数构成说明（用于页面展示）。"""
-    base, bonuses, total = risk_index(hits)
-    parts = [f"基础分 {base}"]
-    parts += [f"{name}(+{b})" for name, b in bonuses]
-    return "，".join(parts) + f" → {total}/100"
+    return f"命中点数合计 {risk_index(hits)}/100"
 
 
 def level_reason_short(hits):
@@ -59,14 +44,14 @@ def level_reason_short(hits):
     counted = [h for h in hits if not h.get("merged_into")]
     high = [h for h in counted if h.get("level") == "高"]
     mid = [h for h in counted if h.get("level") == "中"]
-    if _bonuses(hits):
-        return "关键组合触发"
+    if any(h.get("kind") == "combo" and h.get("level") == "高" for h in counted):
+        return "组合预警链触发"
     if len(high) >= 2:
         return "多条高危特征"
     if high and mid:
         return "高危 + 中危"
     if high:
-        return "1 条高危特征"
+        return "高危特征"
     if len(mid) >= 2:
         return "多条中危特征"
     if mid:
@@ -75,7 +60,7 @@ def level_reason_short(hits):
 
 
 def score_breakdown(hits):
-    """指数明细：每条命中的点数、基础分、加成与最终指数。"""
+    """指数明细：每条计入规则的点数与最终指数。"""
     rows = []
     for h in hits:
         if h.get("merged_into"):
@@ -87,13 +72,7 @@ def score_breakdown(hits):
             "level": level,
             "points": RISK_POINTS.get(level, 3),
         })
-    base, bonuses, total = risk_index(hits)
-    return {
-        "rows": rows,
-        "base": base,
-        "bonuses": bonuses,
-        "total": total,
-    }
+    return {"rows": rows, "total": risk_index(hits)}
 
 
 def top_risks(hits, n=3):
