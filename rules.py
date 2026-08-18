@@ -380,31 +380,19 @@ def check_r39(profile):
 
 
 def check_r19(profile, hits=None):
-    """G001 临界点聚集（组合规则）：所得额落于小微限额85%-100% 且 大额调减项命中。"""
+    """G001 临界调减联动（组合规则）：所得额落于小微限额85%-100% 且 大额调减项命中。"""
     taxable = _num(profile.get("应纳税所得额(万元)"))
     rd = _num(profile.get("研发费用(万元)"))
     if taxable is None or rd is None:
-        return _rule("G001", "临界点聚集", False, "中", "应纳税所得额或研发费用缺失", "")
+        return _rule("G001", "临界调减联动", False, "中", "应纳税所得额或研发费用缺失", "")
     if 255 <= taxable <= 300 and _big_deduction(profile):
         return _rule(
-            "G001", "临界点聚集", True, "中",
+            "G001", "临界调减联动", True, "中",
             f"应纳税所得额 {taxable:.1f}万（位于300万限额的85%-100%）+ 大额调减项（研发费用 {rd:.0f}万，"
             f"≥ 所得额50%）",
-            "临界点聚集（拆户/调减规避）是团伙虚开与偷逃税核查重点；备查研发立项、费用归集、辅助账。",
+            "临界调减联动（拆户/调减规避）是团伙虚开与偷逃税核查重点；备查研发立项、费用归集、辅助账。",
         )
-    return _rule("G001", "临界点聚集", False, "中", "未同时命中所得临界区间与大额调减", "")
-
-
-def check_g002(profile, hits):
-    """G002 小微临界预警链：G001 临界点聚集 + R604 收入利润不匹配 同时命中。"""
-    ids = {h.get("rule_id") for h in hits}
-    if "G001" in ids and "R604" in ids:
-        return _rule(
-            "G002", "小微临界预警链", True, "高",
-            "临界点聚集 G001 与收入利润不匹配 R604 同时命中，构成完整预警链",
-            "核实申报真实性并准备备查资料；确认无误后再享受小微优惠，风险处置与合规降负双轨并行。",
-        )
-    return _rule("G002", "小微临界预警链", False, "高", "未同时命中 G001 与 R604", "")
+    return _rule("G001", "临界调减联动", False, "中", "未同时命中所得临界区间与大额调减", "")
 
 
 def check_r20(profile):
@@ -686,18 +674,11 @@ CATEGORY_OF = {rid: cat for cat, ids in RULE_CATEGORIES.items() for rid in ids}
 # G001 起编号，新组合按 G002、G003… 追加。
 COMBO_RULES = {
     "G001": {
-        "name": "临界点聚集",
+        "name": "临界调减联动",
         "level": "中",
         "depends_on": ["R601", "R602"],
         "label": "R601 小微临界 + R602 大额调减",
         "check": check_r19,
-    },
-    "G002": {
-        "name": "小微临界预警链",
-        "level": "高",
-        "depends_on": ["G001", "R604"],
-        "label": "G001 临界点聚集 + R604 收入利润不匹配",
-        "check": check_g002,
     },
 }
 

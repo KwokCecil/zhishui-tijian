@@ -185,20 +185,20 @@ def test_14_score_boundaries():
     # 1 条高危：60 → 高风险
     s1, l1 = scoring.risk_score([{"level": "高"}])
     assert l1 == "高风险" and s1 == 60, (s1, l1)
-    # 高危 + 中危：60 + 20 = 80 → 高风险
+    # 高危 + 中危：60 + 30 = 90 → 高风险
     assert scoring.risk_level([{"level": "高"}, {"level": "中"}]) == "高风险"
-    # 2 条中危：20 + 20 = 40 → 中风险
-    assert scoring.risk_level([{"level": "中"}, {"level": "中"}]) == "中风险"
+    # 2 条中危：30 + 30 = 60 → 高风险（两条中危即预警）
+    assert scoring.risk_level([{"level": "中"}, {"level": "中"}]) == "高风险"
     # 2 条高危：封顶 100 → 高风险
     assert scoring.risk_level([{"level": "高"}, {"level": "高"}]) == "高风险"
-    # 无加成：5 + 20 + 20 = 45 → 中风险（组合升级由规则层 G002 完成）
+    # 无加成：10 + 30 + 30 = 70 → 高风险
     combo = [
         {"level": "低", "rule_id": "R601"},
         {"level": "中", "rule_id": "G001"},
         {"level": "中", "rule_id": "R604"},
     ]
-    assert scoring.risk_level(combo) == "中风险"
-    assert scoring.risk_index(combo) == 45
+    assert scoring.risk_level(combo) == "高风险"
+    assert scoring.risk_index(combo) == 70
 
 
 def test_15_report_traceable():
@@ -262,7 +262,7 @@ def test_22_device_chip_risk():
 def test_23_case1_full_warning_chain():
     data = generate_data.build_scenario("case1")
     hits = hits_of(data)
-    for rid in ("R601", "G001", "G002", "R604"):
+    for rid in ("R601", "G001", "R604"):
         rule(hits, rid)
     r17 = rule(hits, "R601")
     assert "六税两费" in r17["suggestion"] or "政策包" in r17["suggestion"], r17
@@ -378,10 +378,10 @@ def test_34_case1_level_high():
     r601 = rule(hits, "R601")
     assert r601.get("merged_into") == "G001", r601
     g001 = rule(hits, "G001")
-    assert g001.get("merged_into") == "G002", g001
+    assert g001.get("merged_into") is None, g001
     assert "R601项" in g001["evidence"] and "R602项" in g001["evidence"], g001
-    g002 = rule(hits, "G002")
-    assert g002["level"] == "高" and g002.get("kind") == "combo", g002
+    r604 = rule(hits, "R604")
+    assert r604.get("merged_into") is None, r604
 
 
 def test_35_case6_level_high():
@@ -423,16 +423,14 @@ def test_38_rule_hierarchy_merge():
     data = generate_data.build_scenario("case1")
     hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
     summary = scoring.risk_summary(hits)
-    assert summary["hit_count"] == 1, summary  # G002 已并入全部上游特征
+    assert summary["hit_count"] == 2, summary  # G001（含 R601/R602）+ R604
     r17 = rule(hits, "R601")
     assert r17["merged_into"] == "G001", r17
     r39 = rule(hits, "R602")
     assert r39["merged_into"] == "G001", r39
     g001 = rule(hits, "G001")
-    assert g001["merged_into"] == "G002", g001
-    r604 = rule(hits, "R604")
-    assert r604["merged_into"] == "G002", r604
-    assert summary["by_level"]["高"] == 1 and summary["by_level"]["中"] == 0, summary["by_level"]
+    assert g001.get("merged_into") is None, g001
+    assert summary["by_level"]["中"] == 2 and summary["by_level"]["高"] == 0, summary["by_level"]
 
 
 def test_42_big_deduction_standalone():
@@ -453,9 +451,8 @@ def test_43_rule_metadata_category_order():
     assert rules.CATEGORY_OF["R101"] == "发票与开票", rules.CATEGORY_OF
     assert rules.CATEGORY_OF["R602"] == "资格与优惠", rules.CATEGORY_OF
     assert rules.COMBO_RULES["G001"]["depends_on"] == ["R601", "R602"], rules.COMBO_RULES
-    assert rules.COMBO_RULES["G002"]["depends_on"] == ["G001", "R604"], rules.COMBO_RULES
+    assert set(rules.COMBO_RULES) == {"G001"}, rules.COMBO_RULES
     assert "legacy_id" not in rules.COMBO_RULES["G001"], rules.COMBO_RULES
-    assert "legacy_id" not in rules.COMBO_RULES["G002"], rules.COMBO_RULES
     assert "R17" not in rules.CATEGORY_OF and "R601" in rules.CATEGORY_OF, rules.CATEGORY_OF
 
     order = [r[0] for r in rules.RULE_CHECKS]
@@ -471,10 +468,6 @@ def test_43_rule_metadata_category_order():
     assert r19.get("kind") == "combo", r19
     assert r19.get("depends_on") == ["R601", "R602"], r19
     assert r19.get("category") == "组合规则", r19
-    g002 = rule(hits, "G002")
-    assert g002.get("kind") == "combo", g002
-    assert g002.get("depends_on") == ["G001", "R604"], g002
-    assert g002.get("category") == "组合规则", g002
 
 
 def test_39_risk_policy_link_general():
@@ -585,7 +578,7 @@ def main():
     case(11, "全部正常 → 低风险画像", test_11_clean_low_risk)
     case(12, "未收录政策问题 → 拒绝并引导12366", test_12_unknown_policy_refused)
     case(13, "资产总额缺失 → 不猜，标注需补充", test_13_missing_data_no_guess)
-    case(14, "风险指数边界（0/40/45/60/80/100）→ 等级一致", test_14_score_boundaries)
+    case(14, "风险指数边界（0/30/60/70/100）→ 等级一致", test_14_score_boundaries)
     case(15, "报告逐条可溯源（ID+证据+建议）", test_15_report_traceable)
     case(16, "案例一命中 → 展示相似案例+备查资料", test_16_case1_similar_case_and_docs)
     case(17, "加油站模板 → R802 三源不一致+以进控销", test_17_fuel_three_source)
@@ -605,11 +598,11 @@ def main():
     case(31, "get_demo_scenario 未知场景返回错误", test_31_scenario_tool_unknown)
     case(32, "generate_report 离线报告含风险指数", test_32_report_tool_offline)
     case(33, "离线 Agent 对话循环（风险/政策/小微）", test_33_offline_agent_loop)
-    case(34, "案例一等级：高风险（组合升级）", test_34_case1_level_high)
+    case(34, "案例一等级：高风险（两条中危触发）", test_34_case1_level_high)
     case(35, "案例六等级：高风险（高危+中危）", test_35_case6_level_high)
     case(36, "政策明细清晰（P101数值/P102全满足/P301下一步）", test_36_policy_detail_clarity)
     case(37, "P101/P102 互斥择优（二选一）", test_37_policy_exclusivity)
-    case(38, "G002 合并 G001/R604、G001 合并 R601/R602 不重复计分", test_38_rule_hierarchy_merge)
+    case(38, "G001 合并 R601/R602 不重复计分", test_38_rule_hierarchy_merge)
     case(39, "风险-政策联动为通用机制（多场景验证）", test_39_risk_policy_link_general)
     case(40, "条件不满足即不适用/六税两费含小规模纳税人", test_40_policy_status_no_false_usable)
     case(41, "负面清单按限制规则判定（未触发/命中）", test_41_restriction_card_semantics)

@@ -2,13 +2,13 @@
 """风险指数（演示版，0-100，越高越危险）。
 
 分数 = 命中规则点数之和，封顶 100。
-点数：高危 60 分/条、中危 20 分/条、低危/提示 5 分/条。
-等级由指数直接推导：≥60 高风险；20-59 中风险；<20 低风险。
-组合升级由规则层完成（G 系列组合规则自带级别与点数），评分层不做任何加成。
+点数：高危 60 分/条、中危 30 分/条、低危/提示 10 分/条。
+预警原则：一条高危或两条中危即触发高风险。
+等级由指数直接推导：≥60 高风险；30-59 中风险；<30 低风险。
 口径均为演示值，报告和页面需标注。
 """
 
-RISK_POINTS = {"高": 60, "中": 20, "低": 5, "提示": 5}
+RISK_POINTS = {"高": 60, "中": 30, "低": 10, "提示": 10}
 LEVEL_RANK = {"高": 3, "中": 2, "低": 1, "提示": 1}
 
 
@@ -29,7 +29,7 @@ def risk_level(hits):
     total = risk_index(hits)
     if total >= 60:
         return "高风险"
-    if total >= 20:
+    if total >= 30:
         return "中风险"
     return "低风险"
 
@@ -44,18 +44,14 @@ def level_reason_short(hits):
     counted = [h for h in hits if not h.get("merged_into")]
     high = [h for h in counted if h.get("level") == "高"]
     mid = [h for h in counted if h.get("level") == "中"]
-    if any(h.get("kind") == "combo" and h.get("level") == "高" for h in counted):
-        return "组合预警链触发"
-    if len(high) >= 2:
-        return "多条高危特征"
-    if high and mid:
-        return "高危 + 中危"
     if high:
         return "高危特征"
     if len(mid) >= 2:
-        return "多条中危特征"
+        return "两条中危触发"
     if mid:
         return "中危特征"
+    if len([h for h in counted if h.get("level") in ("低", "提示")]) >= 2:
+        return "多条提示特征"
     return "无明显风险"
 
 
