@@ -671,11 +671,16 @@ RULE_CATEGORIES = {
 CATEGORY_ORDER = list(RULE_CATEGORIES)
 CATEGORY_OF = {rid: cat for cat, ids in RULE_CATEGORIES.items() for rid in ids}
 
-# 组合规则：由原子规则推导，命中时原子规则并入组合结果，不重复计分
+# 组合规则（C 系列）：由原子规则推导，与原子规则分开编号、分开执行。
+# demo 期间保留 legacy_id 作为兼容引用（原 R19），新组合按 C02、C03… 追加。
 COMBO_RULES = {
-    "R19": {
+    "C01": {
+        "name": "临界点聚集",
+        "legacy_id": "R19",
+        "level": "中",
         "depends_on": ["R17", "R39"],
-        "label": "组合规则（R17 小微临界 + R39 大额调减）",
+        "label": "R17 小微临界 + R39 大额调减",
+        "check": check_r19,
     },
 }
 
@@ -693,7 +698,6 @@ _RULES = [
     ("R16", "纳税信用等级低", "高", check_r16),
     ("R17", "小微临界", "低", check_r17),
     ("R18", "利润与申报应纳税所得额差异过大", "中", check_r18),
-    ("R19", "临界点聚集", "中", check_r19),
     ("R20", "研发加计扣除占比异常", "中", check_r20),
     ("R39", "大额调减项", "低", check_r39),
     ("R21", "单站销售横向偏离", "中", check_r21),
@@ -746,9 +750,21 @@ def run_all(profile, invoices, fund_flows=None, contracts=None):
             result = _rule(rule_id, name, False, default_level, f"规则执行异常：{exc}", "")
         if result.get("hit"):
             result["category"] = CATEGORY_OF.get(rule_id, "其他")
-            if rule_id in COMBO_RULES:
-                result["kind"] = "combo"
-                result["depends_on"] = COMBO_RULES[rule_id]["depends_on"]
+            hits.append(result)
+    # 组合规则：独立于原子规则执行，单独编号（C01…）
+    for combo_id, meta in COMBO_RULES.items():
+        try:
+            result = meta["check"](p)
+        except Exception as exc:  # noqa: BLE001
+            result = _rule(combo_id, meta["name"], False, meta["level"], f"规则执行异常：{exc}", "")
+        if result.get("hit"):
+            result["rule_id"] = combo_id
+            result["combo_id"] = combo_id
+            result["legacy_id"] = meta["legacy_id"]
+            result["name"] = meta["name"]
+            result["kind"] = "combo"
+            result["depends_on"] = meta["depends_on"]
+            result["category"] = "组合规则"
             hits.append(result)
     return _merge_dependent_rules(hits)
 

@@ -208,7 +208,7 @@ if data is None:
     st.markdown(
         "### 使用说明\n\n"
         "1. 左侧选择**内置演示场景**（推荐先跑 `risk`）或上传四类 CSV；\n"
-        "2. 系统运行 29 条风险规则 → 风险评分 → 政策卡片匹配；\n"
+        "2. 系统运行 28 条原子规则 + 1 条组合规则 → 风险评分 → 政策卡片匹配；\n"
         "3. 输出：体检得分 + 等级 + 命中特征 + 监管视角 Top3 + 政策机会 + 行动建议。\n\n"
         "判定全部由规则完成（可溯源），LLM 只负责报告与对话（下方 Agent 对话可演示工具调用链路）。"
     )
@@ -280,7 +280,7 @@ with st.expander("风险指数和风险等级是怎么算的"):
     st.markdown(
         "**风险指数** = 基础分 + 组合加成（封顶 100）。\n\n"
         "基础分：高危 45 分/条、中危 20 分/条、低危/提示 5 分/条。\n"
-        "组合加成仅一条：小微临界家族（R17 或 R19）+ R35 收入利润不匹配 +25。\n\n"
+        "组合加成仅一条：小微临界家族（R17 或 C01）+ R35 收入利润不匹配 +25。\n\n"
         f"本次命中 {len(bd['rows'])} 条，基础分 {bd['base']}；组合加成：{bonus_text}；"
         f"合计 = **{bd['total']} / 100**。"
     )
@@ -320,13 +320,17 @@ if hits:
             f'<span class="status-badge badge-mid">组合规则</span>'
             if h.get("kind") == "combo" else ""
         )
+        legacy_tag = (
+            f'<span style="font-size:.85rem;color:#94a3b8">原编号 {h["legacy_id"]}</span>'
+            if h.get("legacy_id") else ""
+        )
         cat_tag = (
             f'<span style="font-size:.9rem;color:#64748b;margin-left:6px">[{h.get("category", "")}]</span>'
             if h.get("category") else ""
         )
         st.markdown(
             f'<div class="hit-row">{level_badge(h["level"])}'
-            f'<b>{h["rule_id"]} {h["name"]}</b>{combo_badge}{cat_tag}{merge_note}<br>'
+            f'<b>{h["rule_id"]} {h["name"]}</b>{combo_badge}{legacy_tag}{cat_tag}{merge_note}<br>'
             f'<span class="cond">📌 证据：{h["evidence"]}</span><br>'
             f'<span class="cond">💡 建议：{h["suggestion"]}</span></div>',
             unsafe_allow_html=True,

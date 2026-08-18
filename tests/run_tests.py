@@ -262,7 +262,7 @@ def test_22_device_chip_risk():
 def test_23_case1_full_warning_chain():
     data = generate_data.build_scenario("case1")
     hits = hits_of(data)
-    for rid in ("R17", "R19", "R35"):
+    for rid in ("R17", "C01", "R35"):
         rule(hits, rid)
     r17 = rule(hits, "R17")
     assert "六税两费" in r17["suggestion"] or "政策包" in r17["suggestion"], r17
@@ -376,10 +376,10 @@ def test_34_case1_level_high():
     assert summary["level"] == "高风险", summary
     assert summary["score"] == 65, summary
     assert summary["breakdown"]["base"] == 40, summary["breakdown"]
-    assert any("R17/R19 + R35" in name for name, _ in summary["breakdown"]["bonuses"]), summary["breakdown"]
+    assert any("R17/C01 + R35" in name for name, _ in summary["breakdown"]["bonuses"]), summary["breakdown"]
     r17 = rule(hits, "R17")
-    assert r17.get("merged_into") == "R19", r17
-    r19 = rule(hits, "R19")
+    assert r17.get("merged_into") == "C01", r17
+    r19 = rule(hits, "C01")
     assert "R17项" in r19["evidence"] and "R39项" in r19["evidence"], r19
 
 
@@ -422,21 +422,21 @@ def test_38_rule_hierarchy_merge():
     data = generate_data.build_scenario("case1")
     hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
     summary = scoring.risk_summary(hits)
-    assert summary["hit_count"] == 2, summary  # R19（含R17）+ R35
+    assert summary["hit_count"] == 2, summary  # C01（含R17/R39）+ R35
     r17 = rule(hits, "R17")
-    assert r17["merged_into"] == "R19", r17
+    assert r17["merged_into"] == "C01", r17
     r39 = rule(hits, "R39")
-    assert r39["merged_into"] == "R19", r39
+    assert r39["merged_into"] == "C01", r39
     assert summary["by_level"]["低"] == 0, summary["by_level"]
 
 
 def test_42_big_deduction_standalone():
-    # risk 场景：研发300万 ≥ 所得98.5万×50% → R39 单独命中（R19 未触发，不合并）
+    # risk 场景：研发300万 ≥ 所得98.5万×50% → R39 单独命中（C01 未触发，不合并）
     risk = generate_data.build_scenario("risk")
     hits = rules.run_all(risk["company_profile"], risk["invoices"], risk["fund_flows"], risk["contracts"])
     r39 = rule(hits, "R39")
     assert r39["hit"] and r39.get("merged_into") is None, r39
-    assert not any(h["rule_id"] == "R19" for h in hits), [h["rule_id"] for h in hits]
+    assert not any(h["rule_id"] == "C01" for h in hits), [h["rule_id"] for h in hits]
 
     # fuel 场景：无研发费用 → R39 不命中
     fuel = generate_data.build_scenario("fuel")
@@ -447,7 +447,8 @@ def test_42_big_deduction_standalone():
 def test_43_rule_metadata_category_order():
     assert rules.CATEGORY_OF["R01"] == "发票异常", rules.CATEGORY_OF
     assert rules.CATEGORY_OF["R39"] == "案例启发", rules.CATEGORY_OF
-    assert rules.COMBO_RULES["R19"]["depends_on"] == ["R17", "R39"], rules.COMBO_RULES
+    assert rules.COMBO_RULES["C01"]["depends_on"] == ["R17", "R39"], rules.COMBO_RULES
+    assert rules.COMBO_RULES["C01"]["legacy_id"] == "R19", rules.COMBO_RULES
 
     order = [r[0] for r in rules.RULE_CHECKS]
     # 按分类排序：发票异常 < 资金与三流 < ... < 农产品收购
@@ -457,10 +458,11 @@ def test_43_rule_metadata_category_order():
 
     case1 = generate_data.build_scenario("case1")
     hits = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
-    r19 = rule(hits, "R19")
+    r19 = rule(hits, "C01")
     assert r19.get("kind") == "combo", r19
     assert r19.get("depends_on") == ["R17", "R39"], r19
-    assert r19.get("category") == "案例启发", r19
+    assert r19.get("category") == "组合规则", r19
+    assert r19.get("legacy_id") == "R19", r19
 
 
 def test_39_risk_policy_link_general():
@@ -580,7 +582,7 @@ def main():
     case(20, "液位仪缺失率12% → R31", test_20_fuel_data_gap)
     case(21, "上游进油单存在但本地记录缺失 → R33", test_21_upstream_docs_vs_local)
     case(22, "旧标准芯片 → R34 数据降级", test_22_device_chip_risk)
-    case(23, "案例一预警链（R17/R19/R35+降负政策包）", test_23_case1_full_warning_chain)
+    case(23, "案例一预警链（R17/C01/R35+降负政策包）", test_23_case1_full_warning_chain)
     case(24, "收购对象身份存疑+单户巨大 → R36+R37+代开路径", test_24_agricultural_purchase_risk)
     case(25, "上游走逃 → 异常凭证处理路径提示", test_25_abnormal_invoice_path)
     case(26, "工具层 schema 完整（名称/描述/参数）", test_26_tool_schemas_valid)
@@ -595,7 +597,7 @@ def main():
     case(35, "案例六等级：高风险（高危+中危）", test_35_case6_level_high)
     case(36, "政策明细清晰（P01数值/P02全满足/P08下一步）", test_36_policy_detail_clarity)
     case(37, "P01/P02 互斥择优（二选一）", test_37_policy_exclusivity)
-    case(38, "R19 合并 R17 不重复计分", test_38_rule_hierarchy_merge)
+    case(38, "C01 合并 R17/R39 不重复计分", test_38_rule_hierarchy_merge)
     case(39, "风险-政策联动为通用机制（多场景验证）", test_39_risk_policy_link_general)
     case(40, "条件不满足即不适用/六税两费含小规模纳税人", test_40_policy_status_no_false_usable)
     case(41, "负面清单按限制规则判定（未触发/命中）", test_41_restriction_card_semantics)
