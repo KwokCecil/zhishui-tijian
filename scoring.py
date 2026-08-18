@@ -54,6 +54,26 @@ def level_reason(hits):
     return "，".join(parts) + f" → {total}/100"
 
 
+def level_reason_short(hits):
+    """等级卡片下方的一句话原因，不带编号与括号。"""
+    counted = [h for h in hits if not h.get("merged_into")]
+    high = [h for h in counted if h.get("level") == "高"]
+    mid = [h for h in counted if h.get("level") == "中"]
+    if _bonuses(hits):
+        return "关键组合触发"
+    if len(high) >= 2:
+        return "多条高危特征"
+    if high and mid:
+        return "高危 + 中危"
+    if high:
+        return "1 条高危特征"
+    if len(mid) >= 2:
+        return "多条中危特征"
+    if mid:
+        return "中危特征"
+    return "无明显风险"
+
+
 def score_breakdown(hits):
     """指数明细：每条命中的点数、基础分、加成与最终指数。"""
     rows = []

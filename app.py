@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""智税体检 Streamlit 页面（规则版 + Agent 对话）。
-
-运行：streamlit run app.py
-"""
+"""智税体检 Streamlit 页面。"""
 
 import os
+import re
 
 import pandas as pd
 import streamlit as st
@@ -19,60 +17,51 @@ import tools
 
 st.set_page_config(page_title="智税体检 Demo", page_icon="🩺", layout="wide")
 
-# Streamlit secrets 兜底：页面内配置的 key 也能生效
 for secret_key in ("ZHI_SHUI_LLM_API_KEY", "ZHI_SHUI_LLM_BASE_URL", "ZHI_SHUI_LLM_MODEL"):
     if not os.environ.get(secret_key):
         try:
             if secret_key in st.secrets:
                 os.environ[secret_key] = str(st.secrets[secret_key])
         except Exception:
-            pass  # 没有 secrets.toml 时跳过，不影响运行
+            pass
 
 st.markdown(
     """
     <style>
-      html {font-size: 16px;}
-      .block-container {padding-top: 2rem; max-width: 1080px; font-size: 1rem;}
-      h1 {font-size: 2rem; letter-spacing: .5px;}
-      h2 {font-size: 1.4rem; margin-top: 1.6rem;}
-      h3 {font-size: 1.15rem;}
-      .stMarkdown p {font-size: 1rem; line-height: 1.65;}
-      [data-testid="stCaptionContainer"] p {font-size: .95rem; color: #475569;}
-      [data-testid="stExpander"] details summary {font-size: 1rem;}
-      [data-testid="stDataFrame"] {font-size: 1rem;}
-      [data-testid="stDataFrame"] td {padding: 8px 10px !important;}
+      .block-container {padding-top: 1.8rem; max-width: 1080px;}
+      h1 {font-size: 1.8rem;}
+      h2 {font-size: 1.25rem; margin-top: 1.2rem;}
       .metric-row {display: flex; gap: .8rem; flex-wrap: wrap; margin: .4rem 0 1rem;}
-      .metric-card {flex: 1; min-width: 150px; background: #ffffff;
-                    border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px 18px;}
-      .metric-label {font-size: .95rem; color: #334155; font-weight: 600;}
-      .metric-value {font-size: 2rem; font-weight: 700; margin-top: 3px; line-height: 1.2; color: #0f172a;}
-      .metric-sub {font-size: .9rem; color: #475569; margin-top: 3px;}
+      .metric-card {flex: 1; min-width: 150px; background: #fff;
+                    border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px 16px;}
+      .metric-label {font-size: .9rem; color: #1f2937; font-weight: 600;}
+      .metric-value {font-size: 1.7rem; font-weight: 700; color: #0f172a;}
+      .metric-sub {font-size: .85rem; color: #4b5563; margin-top: 2px;}
       .lvl-low {color: #15803d;} .lvl-mid {color: #b45309;} .lvl-high {color: #b91c1c;}
-      .status-badge {display: inline-block; padding: 2px 10px; border-radius: 999px;
-                     font-size: .9rem; font-weight: 700; margin-right: 6px;}
-      .badge-ok {background: #dcfce7; color: #15803d;}
-      .badge-warn {background: #fef3c7; color: #b45309;}
-      .badge-no {background: #fee2e2; color: #b91c1c;}
-      .badge-high {background: #fee2e2; color: #b91c1c;}
-      .badge-mid {background: #fef3c7; color: #b45309;}
-      .badge-low {background: #dcfce7; color: #15803d;}
-      .scenario-box {background: #f0f7ff; border: 1px solid #dbeafe; border-radius: 12px;
-                     padding: 14px 18px; margin: .4rem 0 1rem; font-size: 1rem;
+      .pill {display: inline-block; padding: 1px 8px; border-radius: 999px;
+             font-size: .78rem; font-weight: 700; margin-right: 6px;}
+      .pill-high {background: #fee2e2; color: #b91c1c;}
+      .pill-mid {background: #fef3c7; color: #b45309;}
+      .pill-low {background: #dcfce7; color: #15803d;}
+      .pill-ok {background: #dcfce7; color: #15803d;}
+      .pill-warn {background: #fef3c7; color: #b45309;}
+      .pill-no {background: #fee2e2; color: #b91c1c;}
+      .row {border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px;
+            margin-bottom: 8px; line-height: 1.6;}
+      .muted {font-size: .82rem; color: #6b7280; margin-left: 6px;}
+      .cond {font-size: .92rem; color: #1f2937;}
+      .note {font-size: .88rem; color: #7c2d12;}
+      .row {color: #0f172a;}
+      .scenario-box {background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+                     padding: 10px 14px; margin: .4rem 0 1rem; font-size: .95rem;
                      line-height: 1.7; color: #0f172a;}
-      .scenario-box b {color: #1d4ed8;}
-      .policy-row {border: 1px solid #cbd5e1; background: #ffffff; border-radius: 10px;
-                   padding: 12px 16px; margin-bottom: 10px; color: #0f172a; line-height: 1.7;}
-      .hit-row {border: 1px solid #cbd5e1; background: #ffffff; border-radius: 10px;
-                padding: 12px 16px; margin-bottom: 10px; color: #0f172a; line-height: 1.7;}
-      .cond {font-size: 1rem; color: #334155;}
-      .note {font-size: .95rem; color: #92400e;}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("🩺 智税体检（演示版）")
-st.caption("模拟“金税四期视角”的企业税务健康检查：上传/生成模拟数据 → 风险画像 + 政策机会 + 行动建议")
+st.title("🩺 智税体检")
+st.caption("企业税务健康检查：上传模拟数据，输出风险画像、政策机会与行动建议")
 
 SCENARIO_GUIDE = {
     "clean": {
@@ -118,39 +107,44 @@ def profile_summary(profile):
         ("企业ID", "企业ID"),
         ("行业", "行业"),
         ("纳税人类型", "纳税人类型"),
-        ("营业收入(万元)", "营业收入"),
-        ("个税申报人数", "个税人数"),
-        ("社保参保人数", "社保人数"),
+        ("营业收入(万元)", "收入"),
+        ("个税申报人数", "人数"),
         ("应纳税所得额(万元)", "应税所得"),
-        ("纳税信用等级", "信用等级"),
-        ("关联户数", "关联户数"),
+        ("纳税信用等级", "信用"),
     ]
     items = []
     for col, label in fields:
         v = p.get(col)
         if v is not None and str(v).strip() not in ("", "nan", "None"):
-            items.append((label, str(v)))
-    return items
+            items.append(f"{label} {v}")
+    return " ｜ ".join(items)
 
 
-def status_badge(status):
+def level_pill(level):
+    cls = {"高": "pill-high", "中": "pill-mid", "低": "pill-low", "提示": "pill-low"}.get(level, "pill-mid")
+    return f'<span class="pill {cls}">{level}</span>'
+
+
+def status_pill(status):
     cls = {
-        "可享受": "badge-ok",
-        "需人工确认": "badge-warn",
-        "不适用": "badge-no",
-        "命中限制": "badge-no",
-        "未触发限制": "badge-low",
-    }.get(status, "badge-no")
-    return f'<span class="status-badge {cls}">{status}</span>'
+        "可享受": "pill-ok",
+        "需人工确认": "pill-warn",
+        "不适用": "pill-no",
+        "命中限制": "pill-no",
+        "未触发限制": "pill-low",
+    }.get(status, "pill-no")
+    return f'<span class="pill {cls}">{status}</span>'
 
 
-def level_badge(level):
-    cls = {"高": "badge-high", "中": "badge-mid", "低": "badge-low", "提示": "badge-low"}.get(level, "badge-mid")
-    return f'<span class="status-badge {cls}">{level}</span>'
+def de_paren(text):
+    text = re.sub(r"（[^（）]{1,60}）", "", str(text))
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip(" ，；、")
 
 
-def level_class(level):
-    return {"低风险": "lvl-low", "中风险": "lvl-mid", "高风险": "lvl-high"}.get(level, "lvl-mid")
+def cond_text(c):
+    mark = "✓" if c["pass"] is True else ("✗" if c["pass"] is False else "?")
+    return f"{c['field']} {c['value']} {mark}"
 
 
 with st.sidebar:
@@ -164,8 +158,8 @@ with st.sidebar:
             "clean": "对照组 · 低风险",
             "risk": "软件企业 · 混合风险",
             "fuel": "加油站 · 三源比对",
-            "case1": "案例一 · 小微临界预警链",
-            "case6": "案例六 · 农产品收购发票",
+            "case1": "案例一 · 小微临界",
+            "case6": "案例六 · 收购发票",
         }[scenario])
         if st.button("生成并体检", type="primary"):
             data = generate_data.build_scenario(scenario)
@@ -182,40 +176,28 @@ with st.sidebar:
                 "contracts": up_contracts,
             })
 
-st.info(
-    "⚠️ 演示口径：金税四期具体模型与阈值不公开，本工具使用公开可见的风险逻辑 + 演示阈值，"
-    "定位为企业自查工具；所有数据为模拟数据。生产环境需按地区、行业、主管税务机关口径校准。"
-)
-
 if mode == "内置演示场景" and scenario:
     g = SCENARIO_GUIDE[scenario]
     st.markdown(
-        f"""
-        <div class="scenario-box">
-          <b>场景：{scenario}</b>（{ {
+        f'<div class="scenario-box"><b>场景：{scenario}</b> · { {
             "clean": "对照组", "risk": "混合风险", "fuel": "行业模板",
             "case1": "实习案例一", "case6": "实习案例六",
-        }[scenario] }）<br>
-          企业画像：{g["企业画像"]}<br>
-          风险种子：{g["风险种子"]}<br>
-          预期结论：{g["预期结论"]}
-        </div>
-        """,
+        }[scenario] }<br>'
+        f'企业画像：{g["企业画像"]}<br>'
+        f'风险种子：{g["风险种子"]}<br>'
+        f'预期结论：{g["预期结论"]}</div>',
         unsafe_allow_html=True,
     )
 
 if data is None:
     st.markdown(
-        "### 使用说明\n\n"
-        "1. 左侧选择**内置演示场景**（推荐先跑 `risk`）或上传四类 CSV；\n"
-        "2. 系统运行 28 条原子规则 + 1 条组合规则 → 风险评分 → 政策卡片匹配；\n"
-        "3. 输出：体检得分 + 等级 + 命中特征 + 监管视角 Top3 + 政策机会 + 行动建议。\n\n"
-        "判定全部由规则完成（可溯源），LLM 只负责报告与对话（下方 Agent 对话可演示工具调用链路）。"
+        "**使用说明**：左侧选择场景或上传 CSV；页面输出风险画像、政策机会与行动建议。"
+        "规则判断可溯源，模型只负责报告与对话。"
     )
     st.stop()
 
 if "company_profile" not in data or data["company_profile"] is None:
-    st.error("缺少企业指标数据，无法体检。")
+    st.error("缺少企业指标数据。")
     st.stop()
 
 profile = data["company_profile"]
@@ -227,169 +209,96 @@ hits = rules.run_all(profile, invoices, fund_flows, contracts)
 summary = scoring.risk_summary(hits)
 matched = policies.match_cards(profile)
 
-# ---- 体检对象概况 ----
-items = profile_summary(profile)
-if items:
-    st.markdown("**体检对象**：" + " ｜ ".join(f"{k} {v}" for k, v in items))
+st.markdown(f"**体检对象**：{profile_summary(profile)}")
 
-# ---- 关键结论横幅 ----
 if hits:
     top = summary["top3"][0]
     st.error(
-        f"⚠️ 关键结论：命中 {summary['hit_count']} 条风险特征，"
-        f"最高关注 **{top['rule_id']} {top['name']}**（{top['level']}级）；"
-        f"等级判定：**{summary['level']}**。"
+        f"命中 {summary['hit_count']} 条风险特征，等级 {summary['level']}，"
+        f"最高关注 {top['rule_id']} {top['name']}"
     )
 else:
-    st.success("✅ 未命中风险特征，等级：低风险。仍建议保持申报资料完整、关注政策更新。")
+    st.success("未命中风险特征，等级低风险")
 
-# ---- 指标卡 ----
-lvl_cls = level_class(summary["level"])
 usable_count = sum(1 for m in matched if m["status"] in ("可享受", "需人工确认"))
+lvl_cls = {"低风险": "lvl-low", "中风险": "lvl-mid", "高风险": "lvl-high"}[summary["level"]]
 st.markdown(
     f"""
     <div class="metric-row">
       <div class="metric-card">
         <div class="metric-label">风险指数</div>
-        <div class="metric-value">{summary['score']}<span style="font-size:1rem;color:#94a3b8"> /100</span></div>
-        <div class="metric-sub">0-100，越高越危险</div>
+        <div class="metric-value">{summary['score']}/100</div>
+        <div class="metric-sub">越高越危险</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">风险等级</div>
         <div class="metric-value {lvl_cls}">{summary['level']}</div>
-        <div class="metric-sub">{summary['level_reason']}</div>
+        <div class="metric-sub">{scoring.level_reason_short(hits)}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">命中特征</div>
-        <div class="metric-value">{summary['hit_count']} <span style="font-size:1rem;color:#94a3b8">条</span></div>
-        <div class="metric-sub">高 {summary['by_level'].get('高',0)} / 中 {summary['by_level'].get('中',0)} / 低 {summary['by_level'].get('低',0)}</div>
+        <div class="metric-value">{summary['hit_count']}</div>
+        <div class="metric-sub">高{summary['by_level'].get('高',0)} / 中{summary['by_level'].get('中',0)} / 低{summary['by_level'].get('低',0)}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">可关注政策</div>
-        <div class="metric-value">{usable_count} <span style="font-size:1rem;color:#94a3b8">条</span></div>
-        <div class="metric-sub">可享受 / 需人工确认</div>
+        <div class="metric-value">{usable_count}</div>
+        <div class="metric-sub">可享受 / 需确认</div>
       </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-with st.expander("风险指数和风险等级是怎么算的"):
-    bd = summary["breakdown"]
-    bonus_text = "；".join(f"{name}(+{b})" for name, b in bd["bonuses"]) or "无"
+st.subheader("命中特征")
+for h in hits:
+    merged = f'<span class="muted">已并入 {h["merged_into"]}</span>' if h.get("merged_into") else ""
     st.markdown(
-        "**风险指数** = 基础分 + 组合加成（封顶 100）。\n\n"
-        "基础分：高危 45 分/条、中危 20 分/条、低危/提示 5 分/条。\n"
-        "组合加成仅一条：小微临界家族（R601 或 G001）+ R604 收入利润不匹配 +25。\n\n"
-        f"本次命中 {len(bd['rows'])} 条，基础分 {bd['base']}；组合加成：{bonus_text}；"
-        f"合计 = **{bd['total']} / 100**。"
-    )
-    if bd["rows"]:
-        bd_df = pd.DataFrame([{
-            "特征ID": r["rule_id"],
-            "特征名称": r["name"],
-            "级别": r["level"],
-            "点数": r["points"],
-        } for r in bd["rows"]])
-        st.dataframe(bd_df, width="stretch", hide_index=True)
-    st.markdown(
-        "**风险等级**由指数直接推导：\n\n"
-        "- 高风险：指数 ≥ 60\n"
-        "- 中风险：20-59\n"
-        "- 低风险：< 20\n\n"
-        f"本次指数构成：**{summary['level_reason']}**"
+        f'<div class="row">{level_pill(h["level"])}<b>{h["rule_id"]} {h["name"]}</b>{merged}<br>'
+        f'<span class="cond">证据：{de_paren(h["evidence"])}</span><br>'
+        f'<span class="cond">建议：{de_paren(h["suggestion"])}</span></div>',
+        unsafe_allow_html=True,
     )
 
-# ---- 监管视角 Top3 ----
 st.subheader("监管视角 Top3")
 if summary["top3"]:
     for i, t in enumerate(summary["top3"], 1):
-        st.markdown(f"{i}. **{t['rule_id']} [{t['level']}] {t['name']}**：{t['evidence']}")
+        st.markdown(f"{i}. **{t['name']}** · {t['rule_id']} · {t['level']}：{de_paren(t['evidence'])}")
 else:
-    st.markdown("- 未命中明显风险特征；建议保持申报资料完整，关注政策更新。")
+    st.markdown("- 无")
 
-# ---- 命中特征明细 ----
-st.subheader("命中特征明细")
-if hits:
-    for h in hits:
-        merge_note = (
-            f'<br><span class="note">🔗 已并入 {h["merged_into"]}，不重复计分</span>'
-            if h.get("merged_into") else ""
-        )
-        combo_badge = (
-            f'<span class="status-badge badge-mid">组合规则</span>'
-            if h.get("kind") == "combo" else ""
-        )
-        cat_tag = (
-            f'<span style="font-size:.9rem;color:#64748b;margin-left:6px">[{h.get("category", "")}]</span>'
-            if h.get("category") else ""
-        )
-        st.markdown(
-            f'<div class="hit-row">{level_badge(h["level"])}'
-            f'<b>{h["rule_id"]} {h["name"]}</b>{combo_badge}{cat_tag}{merge_note}<br>'
-            f'<span class="cond">📌 证据：{h["evidence"]}</span><br>'
-            f'<span class="cond">💡 建议：{h["suggestion"]}</span></div>',
-            unsafe_allow_html=True,
-        )
-else:
-    st.success("未命中风险特征。")
-
-# ---- 优惠政策清单 ----
-st.subheader("优惠政策清单")
-st.markdown(
-    "判定流程：① 逐项核对条件（✅ 满足 / ❌ 不满足 / ❓ 数据缺失）→ "
-    "② 全部满足且无需资质 = **可享受**；③ 条件满足但需资质/材料 = **需人工确认**"
-    "（卡片内写明下一步做什么）；④ 任一条件不满足 = **不适用**；"
-    "限制规则（负面清单）单独判定：命中 = 不得享受，未触发 = 不影响。"
-)
+st.subheader("优惠政策")
 usable = [m for m in matched if m["status"] in ("可享受", "需人工确认", "命中限制")]
 not_usable = [m for m in matched if m["status"] in ("不适用", "未触发限制")]
-if usable:
-    for m in usable:
-        cond_lines = []
-        for c in m.get("conditions", []):
-            mark = "✅" if c["pass"] is True else ("❌" if c["pass"] is False else "❓")
-            cond_lines.append(
-                f"{mark} {c['field']}：当前 {c['value']}（要求 {c['requirement']}）"
-            )
-        cond_html = "<br>".join(cond_lines) if cond_lines else "需人工核对资格材料"
-        note_label = {
-            "需人工确认": "下一步",
-            "命中限制": "影响",
-        }.get(m["status"], "说明")
-        notes = []
-        if m.get("exclusive_note"):
-            notes.append(f'<div class="note">🔁 互斥说明：{m["exclusive_note"]}</div>')
-        if m.get("note"):
-            notes.append(f'<div class="note">📋 {note_label}：{m["note"]}</div>')
-        note_html = "".join(notes)
-        excl_badge = (
-            f'<span class="status-badge badge-warn">二选一（与{m["exclusive_with"]}互斥）</span>'
-            if m.get("exclusive_with") else ""
-        )
-        st.markdown(
-            f'<div class="policy-row">{status_badge(m["status"])}{excl_badge}'
-            f'<b>{m["title"]}</b>　<code>{m["doc_number"]}</code><br>'
-            f'<span style="font-size:.88rem;color:#475569">{m["benefit"]}</span><br>'
-            f'<span class="cond">{cond_html}</span>{note_html}</div>',
-            unsafe_allow_html=True,
-        )
-else:
-    st.info("未匹配到可关注政策。")
+for m in usable:
+    conds = " · ".join(cond_text(c) for c in m.get("conditions", []))
+    notes = []
+    if m.get("exclusive_note"):
+        notes.append(f'<div class="note">与 {m["exclusive_with"]} 互斥，小微 5% 更优</div>')
+    if m["status"] == "需人工确认":
+        notes.append(f'<div class="note">{de_paren(m["note"])}</div>')
+    if m["status"] == "命中限制":
+        notes.append(f'<div class="note">{m["note"]}</div>')
+    st.markdown(
+        f'<div class="row">{status_pill(m["status"])}<b>{m["policy_id"]} {m["title"]}</b>'
+        f'<span class="muted">{m["doc_number"]}</span><br>'
+        f'<span class="cond">{de_paren(m["benefit"])}</span><br>'
+        f'<span class="cond">{conds}</span>{"".join(notes)}</div>',
+        unsafe_allow_html=True,
+    )
 if not_usable:
     with st.expander(f"不适用 / 未触发限制（{len(not_usable)} 条）"):
         for m in not_usable:
-            st.markdown(f"- {m['title']}（{m['doc_number']}）：{m['detail']}｜{m['note']}")
+            st.markdown(f"- {m['policy_id']} {m['title']} · {m['status']}")
 
 for w in policies.linked_warnings(hits, matched):
-    st.warning(f"⚠️ 风险与政策联动（{w['title']}）：{w['text']}")
+    st.warning(f"{w['title']}：享受前提是先核实申报真实性，已命中 {'、'.join(w['rules'])}")
 
-# ---- 行动建议 ----
 st.subheader("行动建议")
 grouped = [
-    ("🔴 高风险应对", "高"),
-    ("🟠 需关注事项", "中"),
-    ("🟡 日常提示", "低"),
+    ("高风险应对", "高"),
+    ("需关注事项", "中"),
+    ("日常提示", "低"),
 ]
 any_advice = False
 for title, lvl in grouped:
@@ -398,7 +307,7 @@ for title, lvl in grouped:
     for h in hits:
         if h["level"] == lvl:
             for s in h["suggestion"].split("；"):
-                s = s.strip()
+                s = de_paren(s).strip()
                 if s and s not in seen:
                     seen.add(s)
                     items.append(s)
@@ -408,20 +317,36 @@ for title, lvl in grouped:
         for i, s in enumerate(items, 1):
             st.markdown(f"{i}. {s}")
 if not any_advice:
-    st.success("数据表现正常：保持申报资料完整，关注政策更新即可。")
+    st.markdown("数据表现正常，保持申报资料完整即可。")
 
-# ---- AI 报告 ----
+with st.expander("指数怎么算"):
+    bd = summary["breakdown"]
+    st.markdown(
+        f"基础分 {bd['base']}" + (f" + 组合加成 25" if bd["bonuses"] else "") +
+        f" = {bd['total']}，等级阈值：60 高风险 / 20 中风险 / 20 以下低风险"
+    )
+    if bd["rows"]:
+        st.dataframe(
+            pd.DataFrame([{
+                "编号": r["rule_id"],
+                "特征": r["name"],
+                "级别": r["level"],
+                "点数": r["points"],
+            } for r in bd["rows"]]),
+            width="stretch",
+            hide_index=True,
+        )
+
 st.subheader("AI 体检报告")
-if st.button("生成 AI 体检报告", type="secondary"):
+if st.button("生成报告", type="secondary"):
     report = tools.generate_report(hits, summary, matched)
     st.markdown(report["report"])
 elif llm.available():
-    st.caption("已配置大模型 API，将调用 LLM 生成报告；未配置则使用离线模板（同样可用）。")
+    st.caption("已配置模型 API")
 else:
-    st.caption("未配置大模型 API key，当前使用离线模板。配置方式见 README（环境变量 ZHI_SHUI_LLM_API_KEY）。")
+    st.caption("未配置模型 API，使用离线模板")
 
-# ---- Agent 对话 ----
-st.subheader("Agent 对话（演示）")
+st.subheader("Agent 对话")
 if mode == "内置演示场景":
     agent_data = {
         "scenario": scenario,
@@ -438,44 +363,37 @@ else:
         "fund_flows": tools._to_records(fund_flows) if not fund_flows.empty else [],
         "contracts": tools._to_records(contracts) if not contracts.empty else [],
     }
-question = st.text_input(
-    "问它（离线模式支持：风险/体检、优惠/政策、小微）：",
-    placeholder="这家公司有什么风险？",
-)
-if st.button("发送给 Agent", type="primary"):
+question = st.text_input("问它", placeholder="这家公司有什么风险？")
+if st.button("发送", type="primary"):
     if not question.strip():
-        st.warning("先输入一个问题。")
+        st.warning("先输入问题")
     elif agent_data["scenario"] is None and agent_data["profile"] is None:
-        st.warning("请先在左侧生成或上传数据，或切到'内置演示场景'。")
+        st.warning("请先生成或上传数据")
     else:
-        with st.spinner("Agent 正在调用工具…"):
-            try:
-                result = agent.run_agent(
-                    question.strip(),
-                    scenario=agent_data["scenario"] or "risk",
-                    profile=agent_data["profile"],
-                    invoices=agent_data["invoices"],
-                    fund_flows=agent_data["fund_flows"],
-                    contracts=agent_data["contracts"],
-                )
-            except Exception as exc:  # noqa: BLE001
-                st.warning(f"在线 Agent 调用失败（{exc}），已自动切换为离线演示模式。")
-                result = agent._run_offline_agent(
-                    question.strip(),
-                    scenario=agent_data["scenario"] or "risk",
-                    profile=agent_data["profile"],
-                    invoices=agent_data["invoices"],
-                    fund_flows=agent_data["fund_flows"],
-                    contracts=agent_data["contracts"],
-                )
+        try:
+            result = agent.run_agent(
+                question.strip(),
+                scenario=agent_data["scenario"] or "risk",
+                profile=agent_data["profile"],
+                invoices=agent_data["invoices"],
+                fund_flows=agent_data["fund_flows"],
+                contracts=agent_data["contracts"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.warning(f"在线模式失败：{exc}，已切换离线演示")
+            result = agent._run_offline_agent(
+                question.strip(),
+                scenario=agent_data["scenario"] or "risk",
+                profile=agent_data["profile"],
+                invoices=agent_data["invoices"],
+                fund_flows=agent_data["fund_flows"],
+                contracts=agent_data["contracts"],
+            )
         if result["trace"]:
-            with st.expander(f"工具调用轨迹（{len(result['trace'])} 次，模式：{result['mode']}）"):
+            with st.expander(f"工具调用轨迹 {len(result['trace'])} 次 · {result['mode']}"):
                 for t in result["trace"]:
                     st.markdown(f"**→ {t['tool']}**")
-                    st.code(t.get("arguments", "{}"), language="json")
-                    st.markdown("结果：")
                     st.json(t["result"])
-        st.markdown("### Agent 回答")
         st.markdown(result["answer"])
-        if result["mode"] == "offline":
-            st.caption("当前为离线演示模式（无 API key）。配置 key 后，同一问题将由 LLM 自主决定调用哪些工具。")
+
+st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。")
