@@ -31,26 +31,32 @@ for secret_key in ("ZHI_SHUI_LLM_API_KEY", "ZHI_SHUI_LLM_BASE_URL", "ZHI_SHUI_LL
 st.markdown(
     """
     <style>
-      .block-container {padding-top: 2rem; max-width: 1080px;}
-      h1 {font-size: 1.9rem; letter-spacing: .5px;}
-      h2 {font-size: 1.25rem; margin-top: 1.6rem;}
-      h3 {font-size: 1.05rem;}
+      html {font-size: 16px;}
+      .block-container {padding-top: 2rem; max-width: 1080px; font-size: 1rem;}
+      h1 {font-size: 2rem; letter-spacing: .5px;}
+      h2 {font-size: 1.4rem; margin-top: 1.6rem;}
+      h3 {font-size: 1.15rem;}
+      .stMarkdown p {font-size: 1rem; line-height: 1.65;}
       .metric-row {display: flex; gap: .8rem; flex-wrap: wrap; margin: .4rem 0 1rem;}
-      .metric-card {flex: 1; min-width: 150px; background: #f8fafc;
-                    border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px;}
-      .metric-label {font-size: .8rem; color: #64748b;}
-      .metric-value {font-size: 1.65rem; font-weight: 700; margin-top: 2px; line-height: 1.2;}
-      .metric-sub {font-size: .75rem; color: #94a3b8; margin-top: 2px;}
+      .metric-card {flex: 1; min-width: 150px; background: #ffffff;
+                    border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px 18px;}
+      .metric-label {font-size: .95rem; color: #334155; font-weight: 600;}
+      .metric-value {font-size: 2rem; font-weight: 700; margin-top: 3px; line-height: 1.2; color: #0f172a;}
+      .metric-sub {font-size: .88rem; color: #64748b; margin-top: 3px;}
       .lvl-low {color: #15803d;} .lvl-mid {color: #b45309;} .lvl-high {color: #b91c1c;}
-      .status-badge {display: inline-block; padding: 1px 9px; border-radius: 999px;
-                     font-size: .76rem; font-weight: 600; margin-right: 6px;}
+      .status-badge {display: inline-block; padding: 2px 10px; border-radius: 999px;
+                     font-size: .85rem; font-weight: 700; margin-right: 6px;}
       .badge-ok {background: #dcfce7; color: #15803d;}
       .badge-warn {background: #fef3c7; color: #b45309;}
       .badge-no {background: #fee2e2; color: #b91c1c;}
       .scenario-box {background: #f0f7ff; border: 1px solid #dbeafe; border-radius: 12px;
-                     padding: 12px 16px; margin: .4rem 0 1rem; font-size: .92rem;}
+                     padding: 14px 18px; margin: .4rem 0 1rem; font-size: 1rem;
+                     line-height: 1.7; color: #0f172a;}
       .scenario-box b {color: #1d4ed8;}
-      .policy-row {border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px;}
+      .policy-row {border: 1px solid #cbd5e1; background: #ffffff; border-radius: 10px;
+                   padding: 12px 16px; margin-bottom: 10px; color: #0f172a; line-height: 1.7;}
+      .policy-row .cond {font-size: .95rem; color: #334155;}
+      .policy-row .note {font-size: .9rem; color: #92400e;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -76,8 +82,8 @@ SCENARIO_GUIDE = {
         "预期结论": "高风险（数据可信度与少申报疑点）。",
     },
     "case1": {
-        "企业画像": "光伏产业链设备企业（案例一）：收入1.2亿、应税所得292.7万、研发加计600万、280人/资产4800万。",
-        "风险种子": "小微临界（三项均位于限额90%-100%）、临界点聚集、收入与应税所得严重不匹配。",
+        "企业画像": "光伏产业链设备企业（案例一）：收入1.2亿、约120人、资产3200万（未临界）、应税所得292.7万（距300万仅7.3万）、研发加计600万。",
+        "风险种子": "仅所得额临界（人数/资产未临界）、临界点聚集、收入与应税所得严重不匹配。",
         "预期结论": "高风险预警链（R17+R19+R35 组合命中）。",
     },
     "case6": {
@@ -272,15 +278,30 @@ else:
 
 # ---- 优惠政策清单 ----
 st.subheader("优惠政策清单")
+with st.expander("状态说明：可享受 / 需人工确认 / 不适用"):
+    st.markdown("**可享受**：系统规则判定条件全部满足（演示口径），实际申报时仍需企业确认。")
+    st.markdown("**需人工确认**：条件基本满足，但需要核对资质、证明材料或官方名单（如高企资格、研发真实性），系统不做最终判断。")
+    st.markdown("**不适用**：明确不满足条件，不列入可关注政策。")
 usable = [m for m in matched if m["status"] != "不适用"]
 not_usable = [m for m in matched if m["status"] == "不适用"]
 if usable:
     for m in usable:
+        cond_lines = []
+        for c in m.get("conditions", []):
+            mark = "✅" if c["pass"] is True else ("❌" if c["pass"] is False else "❓")
+            cond_lines.append(
+                f"{mark} {c['field']}：当前 {c['value']}（要求 {c['requirement']}）"
+            )
+        cond_html = "<br>".join(cond_lines) if cond_lines else "需人工核对资格材料"
+        note_html = (
+            f'<div class="note">⚠️ {m["note"]}</div>'
+            if m.get("note") else ""
+        )
         st.markdown(
             f'<div class="policy-row">{status_badge(m["status"])}'
             f'<b>{m["title"]}</b>　<code>{m["doc_number"]}</code><br>'
             f'<span style="font-size:.88rem;color:#475569">{m["benefit"]}</span><br>'
-            f'<span style="font-size:.8rem;color:#94a3b8">判定：{m["detail"]}</span></div>',
+            f'<span class="cond">{cond_html}</span>{note_html}</div>',
             unsafe_allow_html=True,
         )
 else:
@@ -293,9 +314,11 @@ if not_usable:
 # ---- 政策符合性逐项判定 ----
 st.subheader("政策符合性判定（逐项）")
 for m in matched:
-    with st.expander(f"{m['policy_id']} {m['title']}　{status_badge(m['status'])}"):
+    with st.expander(f"{m['policy_id']} {m['title']}｜{m['status']}"):
         st.markdown(f"**文号**：{m['doc_number']}")
         st.markdown(f"**优惠内容**：{m['benefit']}")
+        if m.get("note"):
+            st.warning(m["note"])
         if m.get("conditions"):
             for c in m["conditions"]:
                 if c["pass"] is True:
@@ -303,8 +326,10 @@ for m in matched:
                 elif c["pass"] is False:
                     mark = "❌"
                 else:
-                    mark = "❓ 数据缺失/需人工确认"
-                st.markdown(f"{mark} **{c['field']}**：当前 {c['value']}")
+                    mark = "❓"
+                st.markdown(
+                    f"{mark} **{c['field']}**：当前 {c['value']}（要求 {c['requirement']}）"
+                )
         else:
             st.markdown("该政策需人工核对资格材料。")
 

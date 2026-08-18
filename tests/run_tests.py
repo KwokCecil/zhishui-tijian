@@ -311,6 +311,7 @@ def test_28_policy_tool():
     assert len(r) == 8, r
     assert all(m["doc_number"] for m in r), r
     assert all("conditions" in m and m["conditions"] for m in r), r
+    assert any(m["status"] == "需人工确认" and m.get("note") for m in r), r
 
 
 def test_29_small_micro_tool():
@@ -362,9 +363,15 @@ def test_33_offline_agent_loop():
 
 def test_34_case1_level_high():
     data = generate_data.build_scenario("case1")
+    p = data["company_profile"].iloc[0]
+    assert p["个税申报人数"] == 120, p["个税申报人数"]
+    assert p["资产总额(万元)"] == 3200, p["资产总额(万元)"]
+    assert p["应纳税所得额(万元)"] == 292.7, p["应纳税所得额(万元)"]
     hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
     summary = scoring.risk_summary(hits)
     assert summary["level"] == "高风险", summary
+    r17 = rule(hits, "R17")
+    assert "所得" in r17["evidence"] and "人数" not in r17["evidence"], r17
 
 
 def test_35_case6_level_high():

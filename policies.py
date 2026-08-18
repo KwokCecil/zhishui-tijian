@@ -112,6 +112,7 @@ def match_cards(profile, cards=None):
                 "field": cond["field"],
                 "pass": r,
                 "value": _cond_value(cond, p),
+                "requirement": f"{cond.get('op')} {cond.get('value')}{cond.get('unit', '')}",
             })
         if unknown and matched + 0 == 0:
             status = "需人工确认"
@@ -121,6 +122,15 @@ def match_cards(profile, cards=None):
             status = "需人工确认"
         else:
             status = "不适用"
+        if status == "需人工确认":
+            if unknown:
+                note = "部分条件数据缺失，需补充数据后再判定"
+            elif card.get("ruleable") != "可规则":
+                note = "规则条件已满足，但需人工核对资质/证明材料/官方名单，系统不做最终判断"
+            else:
+                note = "条件部分满足，需人工确认实际情况"
+        else:
+            note = ""
         results.append({
             "policy_id": card.get("policy_id"),
             "title": card.get("title"),
@@ -129,6 +139,7 @@ def match_cards(profile, cards=None):
             "benefit": card.get("benefit", ""),
             "detail": "；".join(detail),
             "conditions": cond_results,
+            "note": note,
         })
     return results
 
