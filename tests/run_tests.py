@@ -12,9 +12,11 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import generate_data  # noqa: E402
+import agent  # noqa: E402
 import policies  # noqa: E402
 import rules  # noqa: E402
 import scoring  # noqa: E402
+import tools  # noqa: E402
 
 PROFILE_COLS = generate_data.PROFILE_COLS
 INVOICE_COLS = generate_data.INVOICE_COLS
@@ -267,6 +269,83 @@ def test_25_abnormal_invoice_path():
     assert "暂不允许抵扣" in r["suggestion"] and "进项转出" in r["suggestion"], r
 
 
+def test_26_tool_schemas_valid():
+    assert len(tools.TOOLS) >= 6, "工具数量不足"
+    for t in tools.TOOLS:
+        assert t["name"] and t["description"], t
+        assert t["parameters"]["type"] == "object", t
+        props = t["parameters"]["properties"]
+        assert isinstance(props, dict) and props, t
+        assert set(t["required"]).issubset(props.keys()), t
+
+
+def test_27_health_check_tool():
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "risk"})
+    r = tools.execute_tool("run_tax_health_check", {
+        "profile": scenario["company_profile"],
+        "invoices": scenario["invoices"],
+        "fund_flows": scenario["fund_flows"],
+        "contracts": scenario["contracts"],
+    })
+    assert len(r["hits"]) >= 5, r
+    assert r["summary"]["level"] == "中风险", r["summary"]
+    assert r["summary"]["top3"], r["summary"]
+
+
+def test_28_policy_tool():
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
+    assert len(r) == 8, r
+    assert all(m["doc_number"] for m in r), r
+
+
+def test_29_small_micro_tool():
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    r = tools.execute_tool("check_small_micro", {"profile": scenario["company_profile"]})
+    assert r["qualified"] is True, r
+
+
+def test_30_policy_question_tool():
+    r = tools.execute_tool("answer_policy_question", {"query": "某个没收录的政策"})
+    assert "12366" in r["answer"], r
+
+
+def test_31_scenario_tool_unknown():
+    r = tools.execute_tool("get_demo_scenario", {"name": "nope"})
+    assert "error" in r, r
+
+
+def test_32_report_tool_offline():
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    health = tools.execute_tool("run_tax_health_check", {
+        "profile": scenario["company_profile"],
+        "invoices": scenario["invoices"],
+        "fund_flows": scenario["fund_flows"],
+        "contracts": scenario["contracts"],
+    })
+    matched = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
+    r = tools.execute_tool("generate_report", {
+        "hits": health["hits"],
+        "summary": health["summary"],
+        "matched": matched,
+    })
+    assert "体检得分" in r["report"], r
+    assert "R17" in r["report"], r
+
+
+def test_33_offline_agent_loop():
+    r1 = agent.run_agent("这家公司有什么风险？", scenario="risk")
+    assert r1["mode"] == "offline" and r1["trace"], r1
+    assert "体检得分" in r1["answer"] or "等级" in r1["answer"], r1
+
+    r2 = agent.run_agent("能享受哪些优惠政策？", scenario="case1")
+    assert any(t["tool"] == "match_policy_cards" for t in r2["trace"]), r2
+    assert "政策" in r2["answer"], r2
+
+    r3 = agent.run_agent("这家公司符合小型微利企业条件吗？", scenario="case1")
+    assert any(t["tool"] == "check_small_micro" for t in r3["trace"]), r3
+
+
 def main():
     case(1, "税负率明显低于行业参考区间 → R12 高", test_01_tax_burden_low)
     case(2, "销项软件、进项全餐饮 → R04", test_02_input_output_mismatch)
@@ -293,6 +372,14 @@ def main():
     case(23, "案例一预警链（R17/R19/R35+降负政策包）", test_23_case1_full_warning_chain)
     case(24, "收购对象身份存疑+单户巨大 → R36+R37+代开路径", test_24_agricultural_purchase_risk)
     case(25, "上游走逃 → 异常凭证处理路径提示", test_25_abnormal_invoice_path)
+    case(26, "工具层 schema 完整（名称/描述/参数）", test_26_tool_schemas_valid)
+    case(27, "run_tax_health_check 工具（risk→中风险）", test_27_health_check_tool)
+    case(28, "match_policy_cards 工具（8张卡带文号）", test_28_policy_tool)
+    case(29, "check_small_micro 工具（案例一符合）", test_29_small_micro_tool)
+    case(30, "answer_policy_question 工具（引导12366）", test_30_policy_question_tool)
+    case(31, "get_demo_scenario 未知场景返回错误", test_31_scenario_tool_unknown)
+    case(32, "generate_report 离线报告含体检得分", test_32_report_tool_offline)
+    case(33, "离线 Agent 对话循环（风险/政策/小微）", test_33_offline_agent_loop)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

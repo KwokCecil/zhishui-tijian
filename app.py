@@ -9,12 +9,20 @@ import os
 import pandas as pd
 import streamlit as st
 
+import agent
 import generate_data
+import llm
 import policies
 import rules
 import scoring
+import tools
 
 st.set_page_config(page_title="智税体检 Demo", page_icon="🩺", layout="wide")
+
+# Streamlit secrets 兜底：页面内配置的 key 也能生效
+for secret_key in ("ZHI_SHUI_LLM_API_KEY", "ZHI_SHUI_LLM_BASE_URL", "ZHI_SHUI_LLM_MODEL"):
+    if not os.environ.get(secret_key) and secret_key in st.secrets:
+        os.environ[secret_key] = str(st.secrets[secret_key])
 
 st.title("🩺 智税体检（演示版）")
 st.caption("模拟'金税四期视角'的企业税务健康检查：上传/生成模拟数据 → 风险画像 + 优惠政策清单 + 行动建议")
@@ -38,6 +46,7 @@ with st.sidebar:
     st.header("数据源")
     mode = st.radio("选择方式", ["内置演示场景", "上传 CSV"], index=0)
     data = None
+    scenario = None
     if mode == "内置演示场景":
         scenario = st.selectbox("场景", list(generate_data.SCENARIOS.keys()))
         st.caption({
@@ -146,5 +155,59 @@ with st.expander("行动建议汇总（去重）"):
     if not seen:
         st.markdown("- 数据表现正常，按日常申报节奏维护即可。")
 
-st.caption("LLM 报告模块为加分项（未接入）：后续可把上述结构化结果交给大模型翻译成完整体检报告，"
-           "约束'只翻译、不新增判断'。")
+st.subheader("AI 体检报告")
+if st.button("生成 AI 体检报告", type="secondary"):
+    report = tools.generate_report(hits, summary, matched)
+    st.markdown(report["report"])
+elif llm.available():
+    st.caption("已配置大模型 API，将调用 LLM 生成报告；未配置则使用离线模板（同样可用）。")
+else:
+    st.caption("未配置大模型 API key，当前使用离线模板。配置方式见 README（环境变量 ZHI_SHUI_LLM_API_KEY）。")
+
+st.subheader("Agent 对话（演示）")
+if mode == "内置演示场景":
+    agent_data = {
+        "scenario": scenario,
+        "profile": None,
+        "invoices": None,
+        "fund_flows": None,
+        "contracts": None,
+    }
+else:
+    agent_data = {
+        "scenario": None,
+        "profile": profile.iloc[0].to_dict(),
+        "invoices": tools._to_records(invoices) if not invoices.empty else [],
+        "fund_flows": tools._to_records(fund_flows) if not fund_flows.empty else [],
+        "contracts": tools._to_records(contracts) if not contracts.empty else [],
+    }
+question = st.text_input(
+    "问它（离线模式支持：风险/体检、优惠/政策、小微）：",
+    placeholder="这家公司有什么风险？",
+)
+if st.button("发送给 Agent", type="primary"):
+    if not question.strip():
+        st.warning("先输入一个问题。")
+    elif agent_data["scenario"] is None and agent_data["profile"] is None:
+        st.warning("请先在左侧生成或上传数据，或切到'内置演示场景'。")
+    else:
+        with st.spinner("Agent 正在调用工具…"):
+            result = agent.run_agent(
+                question.strip(),
+                scenario=agent_data["scenario"] or "risk",
+                profile=agent_data["profile"],
+                invoices=agent_data["invoices"],
+                fund_flows=agent_data["fund_flows"],
+                contracts=agent_data["contracts"],
+            )
+        if result["trace"]:
+            with st.expander(f"工具调用轨迹（{len(result['trace'])} 次，模式：{result['mode']}）"):
+                for t in result["trace"]:
+                    st.markdown(f"**→ {t['tool']}**")
+                    st.code(t.get("arguments", "{}"), language="json")
+                    st.markdown("结果：")
+                    st.json(t["result"])
+        st.markdown("### Agent 回答")
+        st.markdown(result["answer"])
+        if result["mode"] == "offline":
+            st.caption("当前为离线演示模式（无 API key）。配置 key 后，同一问题将由 LLM 自主决定调用哪些工具。")

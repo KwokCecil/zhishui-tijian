@@ -27,11 +27,47 @@ zhishui-tijian/
 ├── rules.py              # 风险特征库：每个特征一个函数，统一输出结构
 ├── scoring.py            # 风险评分（演示权重：高3/中2/低1，100-命中加权分）
 ├── policies.py           # 政策卡片匹配（机会筛查模块）
+├── tools.py              # Agent 工具层：把规则/政策/评分包装成 function calling 标准工具
+├── llm.py                # OpenAI 兼容 function calling 客户端（requests 实现）
+├── agent.py              # Agent 对话入口（在线/离线两种模式）
 ├── app.py                # Streamlit 页面：上传/选场景 → 报告
 ├── config/policy_cards.json  # 首批政策卡片（8 张核心卡，文号待官网复核）
-├── tests/run_tests.py    # 25 条验收用例（对应 Demo 方案第 10 节）
+├── tests/run_tests.py    # 验收用例（25 条规则用例 + 8 条工具层用例）
 └── data/                 # 生成的模拟数据
 ```
+
+## Agent 工具层
+
+工具 = 税务知识。判断全部封装在工具里（规则/政策卡片/小微判定），
+LLM 只负责理解意图、决定调用哪个工具、把事实组织成回答。
+
+可用工具：
+
+| 工具 | 输入 | 输出 |
+|---|---|---|
+| run_tax_health_check | profile + 发票/资金/合同 JSON | 命中特征 + 评分 + 等级 + Top3 |
+| match_policy_cards | profile | 优惠政策清单（可享受/需确认/不适用，带文号） |
+| check_small_micro | profile | 小微四项条件逐项判定 |
+| answer_policy_question | query | 未收录政策的统一拒绝（引导 12366） |
+| get_demo_scenario | clean/risk/fuel/case1/case6 | 内置场景四类数据 JSON |
+| generate_report | hits + summary + matched | Markdown 体检报告 |
+
+两种运行模式：
+
+1. **离线演示模式（默认，无需 key）**：关键词路由直接调用工具，页面展示
+   "意图→工具→事实→回答"的完整轨迹。用于面试演示和开发调试。
+2. **在线 Agent 模式**：配置模型 API 后，由 LLM 自主决定调用哪些工具
+   （真实 function calling 循环）。
+
+配置环境变量（或 Streamlit secrets）：
+
+```bash
+set ZHI_SHUI_LLM_API_KEY=sk-xxx
+set ZHI_SHUI_LLM_BASE_URL=https://api.deepseek.com/v1
+set ZHI_SHUI_LLM_MODEL=deepseek-chat
+```
+
+兼容任何 OpenAI 格式的模型服务（DeepSeek、通义、豆包、硅基流动等）。
 
 ## 诚实边界（面试必讲）
 
