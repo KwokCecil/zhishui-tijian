@@ -26,7 +26,8 @@ def config():
 
 
 def available():
-    return bool(config()["api_key"])
+    key = config()["api_key"]
+    return bool(key) and "在这里填入" not in key and "your_key" not in key.lower()
 
 
 def complete(prompt, system="你是严谨的税务数字化产品专家。", temperature=0.3, max_tokens=2000):

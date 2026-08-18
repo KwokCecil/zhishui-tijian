@@ -196,14 +196,25 @@ if st.button("发送给 Agent", type="primary"):
         st.warning("请先在左侧生成或上传数据，或切到'内置演示场景'。")
     else:
         with st.spinner("Agent 正在调用工具…"):
-            result = agent.run_agent(
-                question.strip(),
-                scenario=agent_data["scenario"] or "risk",
-                profile=agent_data["profile"],
-                invoices=agent_data["invoices"],
-                fund_flows=agent_data["fund_flows"],
-                contracts=agent_data["contracts"],
-            )
+            try:
+                result = agent.run_agent(
+                    question.strip(),
+                    scenario=agent_data["scenario"] or "risk",
+                    profile=agent_data["profile"],
+                    invoices=agent_data["invoices"],
+                    fund_flows=agent_data["fund_flows"],
+                    contracts=agent_data["contracts"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.warning(f"在线 Agent 调用失败（{exc}），已自动切换为离线演示模式。")
+                result = agent._run_offline_agent(
+                    question.strip(),
+                    scenario=agent_data["scenario"] or "risk",
+                    profile=agent_data["profile"],
+                    invoices=agent_data["invoices"],
+                    fund_flows=agent_data["fund_flows"],
+                    contracts=agent_data["contracts"],
+                )
         if result["trace"]:
             with st.expander(f"工具调用轨迹（{len(result['trace'])} 次，模式：{result['mode']}）"):
                 for t in result["trace"]:
