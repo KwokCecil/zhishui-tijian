@@ -383,10 +383,18 @@ with st.expander("指数怎么算"):
 
 st.subheader("AI 体检报告")
 if st.button("生成报告", type="secondary"):
-    st.session_state["report"] = tools.generate_report(hits, summary, matched)
+    with st.spinner("正在生成报告…"):
+        st.session_state["report"] = tools.generate_report(hits, summary, matched)
 rep = st.session_state.get("report")
 if rep:
-    st.markdown(rep["report"])
+    st.download_button(
+        "下载 Markdown 报告",
+        rep["report"],
+        file_name="智税体检报告.md",
+        mime="text/markdown",
+    )
+    with st.expander("报告预览"):
+        st.markdown(rep["report"])
     if rep.get("mode") == "llm":
         st.caption("本次报告由大模型生成")
     else:
@@ -418,41 +426,51 @@ else:
         "external_docs": tools._to_records(data["external_docs"]) if "external_docs" in data and not data["external_docs"].empty else [],
         "data_sources": tools._to_records(data["data_sources"]) if "data_sources" in data and not data["data_sources"].empty else [],
     }
-question = st.text_input("问它", placeholder="这家公司有什么风险？")
-if st.button("发送", type="primary"):
-    if not question.strip():
-        st.warning("先输入问题")
-    elif agent_data["scenario"] is None and agent_data["profile"] is None:
-        st.warning("请先生成或上传数据")
+if "chat_history" not in st.session_state:
+    st.session_state["chat_history"] = []
+for role, content in st.session_state["chat_history"]:
+    with st.chat_message(role):
+        st.markdown(content)
+prompt = st.chat_input("问它，例如：这家公司有什么风险？")
+if prompt:
+    if agent_data["scenario"] is None and agent_data["profile"] is None:
+        with st.chat_message("assistant"):
+            st.markdown("请先在左侧生成或上传数据。")
     else:
-        try:
-            result = agent.run_agent(
-                question.strip(),
-                scenario=agent_data["scenario"] or "risk",
-                profile=agent_data["profile"],
-                invoices=agent_data["invoices"],
-                fund_flows=agent_data["fund_flows"],
-                contracts=agent_data["contracts"],
-                external_docs=agent_data["external_docs"],
-                data_sources=agent_data["data_sources"],
-            )
-        except Exception as exc:  # noqa: BLE001
-            st.warning(f"在线模式失败：{exc}，已切换离线演示")
-            result = agent._run_offline_agent(
-                question.strip(),
-                scenario=agent_data["scenario"] or "risk",
-                profile=agent_data["profile"],
-                invoices=agent_data["invoices"],
-                fund_flows=agent_data["fund_flows"],
-                contracts=agent_data["contracts"],
-                external_docs=agent_data["external_docs"],
-                data_sources=agent_data["data_sources"],
-            )
+        st.session_state["chat_history"].append(("user", prompt))
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.spinner("Agent 正在调用工具…"):
+            try:
+                result = agent.run_agent(
+                    prompt,
+                    scenario=agent_data["scenario"] or "risk",
+                    profile=agent_data["profile"],
+                    invoices=agent_data["invoices"],
+                    fund_flows=agent_data["fund_flows"],
+                    contracts=agent_data["contracts"],
+                    external_docs=agent_data["external_docs"],
+                    data_sources=agent_data["data_sources"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.warning(f"在线模式失败：{exc}，已切换离线演示")
+                result = agent._run_offline_agent(
+                    prompt,
+                    scenario=agent_data["scenario"] or "risk",
+                    profile=agent_data["profile"],
+                    invoices=agent_data["invoices"],
+                    fund_flows=agent_data["fund_flows"],
+                    contracts=agent_data["contracts"],
+                    external_docs=agent_data["external_docs"],
+                    data_sources=agent_data["data_sources"],
+                )
+        st.session_state["chat_history"].append(("assistant", result["answer"]))
+        with st.chat_message("assistant"):
+            st.markdown(result["answer"])
         if result["trace"]:
             with st.expander(f"工具调用轨迹 {len(result['trace'])} 次 · {result['mode']}"):
                 for t in result["trace"]:
                     st.markdown(f"**→ {t['tool']}**")
                     st.json(t["result"])
-        st.markdown(result["answer"])
 
 st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。")

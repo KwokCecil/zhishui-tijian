@@ -228,6 +228,38 @@ def _default_report(hits, summary, matched):
     return "\n".join(lines)
 
 
+REPORT_SYSTEM_PROMPT = (
+    "你是税务数字化产品专家，负责把结构化体检结果写成面向企业财务人员的专业自查报告。\n"
+    "排版规范：\n"
+    "1. 输出标准 Markdown，结构严格按给定模板，标题层级不超过三级；\n"
+    "2. 结论先行，每节先给结论再给明细；能用表格就用表格；\n"
+    "3. 少用括号，不堆砌解释；句子短、信息密度高；\n"
+    "4. 行动建议从企业自查视角写（核对、留证、补正、咨询），不要出现监管办案话术；\n"
+    "5. 只整理和解释结构化结果，禁止新增数据、政策或判断；每条结论保留特征ID/文号；\n"
+    "6. 全文 700-1000 字，专业、平实、可读。"
+)
+
+REPORT_TEMPLATE = """# 智税体检报告
+
+## 一、结论
+（一句话：风险指数、等级、命中条数、最高关注特征）
+
+## 二、风险画像
+（表格：指数 / 等级 / 高危·中危·低危命中数 / 可关注政策数）
+
+## 三、命中特征
+（表格：编号 / 名称 / 级别 / 证据 / 建议；组合规则单列并注明构成）
+
+## 四、政策机会
+（可享受、需人工确认分别列出，带文号与下一步）
+
+## 五、行动建议
+（按优先级编号列表，企业自查动作）
+
+## 六、免责声明
+（演示口径：阈值与权重为演示值，生产环境需校准；数据均为模拟）"""
+
+
 @tool(
     "generate_report",
     "把风险体检结果（hits+summary）和政策匹配结果翻译成一份完整的 Markdown 体检报告。"
@@ -254,10 +286,10 @@ def generate_report(hits, summary, matched=None):
     error = ""
     try:
         text = complete(
-            "你是税务数字化产品专家。把下面的结构化体检结果翻译成一份面向企业财务人员的"
-            "中文 Markdown 体检报告（风险画像→命中明细→监管视角→优惠清单→行动建议→免责声明）。"
-            "只整理和解释，禁止新增规则、数据或政策内容；每条结论保留特征ID/文号。"
-            f"\n\n结构化结果：\n{json.dumps(payload, ensure_ascii=False, indent=2)}",
+            "请严格按以下模板生成报告，模板中的注释（括号内说明）不要出现在正文：\n\n"
+            f"{REPORT_TEMPLATE}\n\n"
+            f"结构化结果：\n{json.dumps(payload, ensure_ascii=False, indent=2)}",
+            system=REPORT_SYSTEM_PROMPT,
         )
         if text and text.strip():
             return {"report": text.strip(), "mode": "llm"}
