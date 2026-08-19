@@ -588,22 +588,30 @@ def check_r34(profile, data_sources=None):
     第一步比对一致性由 R802 等规则完成，不一致即提示风险；
     第二步评估"一致"的可信度：必须结合来源方与是否可篡改——
     不可篡改的独立来源（第三方/监管机构且链路难篡改）才算可信；
-    可篡改的来源即使上报监管机构也不可信，内部自洽不等于真实。"""
+    "内部自洽"仅指全部数据来自企业内部；含外部来源但可篡改，属低可信而非内部自洽。"""
     chip = str(profile.get("加油机税控芯片标准", ""))
     rows = []
     if data_sources is not None and not data_sources.empty:
         rows = data_sources.to_dict("records")
+    internal = [r for r in rows if str(r.get("来源方", "")) in ("企业自报", "企业内部")]
+    external = [r for r in rows if str(r.get("来源方", "")) in ("第三方", "监管机构")]
     tamperable = [r for r in rows if str(r.get("可否篡改", "")) in ("可", "可破解", "是")]
     trusted = [
         r for r in rows
         if str(r.get("来源方", "")) in ("第三方", "监管机构")
         and str(r.get("可否篡改", "")) not in ("可", "可破解", "是")
     ]
+    if rows and internal and not external and tamperable:
+        return _rule(
+            "R704", "数据源可信度", True, "中",
+            f"一致数据全部来自企业内部（{len(internal)} 个数据源）且均可被篡改，内部自洽不等于真实",
+            "需用不可篡改的独立来源交叉验证后，再对申报数据下结论。",
+        )
     if rows and tamperable and not trusted:
         return _rule(
             "R704", "数据源可信度", True, "中",
-            f"参与一致的数据来源均可被篡改（{len(tamperable)} 个数据源，含上报监管机构的设备数据），内部自洽不等于真实",
-            "来源方不能决定可信度：需用不可篡改的独立来源交叉验证后，再对申报数据下结论。",
+            f"一致数据含监管/第三方来源（{len(external)} 个）但均可被篡改，可信度低",
+            "来源方不能决定可信度：监管或第三方数据若链路可篡改，仍不可信；需找不可篡改的独立来源验证。",
         )
     if chip == "旧标准":
         return _rule(

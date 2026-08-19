@@ -513,8 +513,8 @@ def test_46_gov_source_still_tamperable():
     ])
     hits = rules.run_all(p, invoices([]), funds([]), contracts([]), None, gov_tamperable)
     r704 = rule(hits, "R704")
-    assert r704["hit"] and "内部自洽不等于真实" in r704["evidence"], r704
-    assert "上报监管机构" in r704["evidence"], r704
+    assert r704["hit"] and "可信度低" in r704["evidence"], r704
+    assert "内部自洽" not in r704["evidence"], r704
 
 
 def test_46_gov_source_still_tamperable():
@@ -527,8 +527,8 @@ def test_46_gov_source_still_tamperable():
     ])
     hits = rules.run_all(p, invoices([]), funds([]), contracts([]), None, gov_tamperable)
     r704 = rule(hits, "R704")
-    assert r704["hit"] and "内部自洽不等于真实" in r704["evidence"], r704
-    assert "上报监管机构" in r704["evidence"], r704
+    assert r704["hit"] and "可信度低" in r704["evidence"], r704
+    assert "内部自洽" not in r704["evidence"], r704
 
 
 def test_39_risk_policy_link_general():
