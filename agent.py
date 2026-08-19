@@ -16,7 +16,10 @@ SYSTEM_PROMPT = (
     "4. 所有数据均为演示模拟数据，不是真实企业；\n"
     "5. 先调用工具拿事实，再组织回答，不要凭记忆回答；\n"
     "6. 回答简短：结论先行，一般不超过150字，只给要点；详细过程不要复述，可在必要时用3-5条短列表；\n"
-    "7. 不要重复调用已调用过的工具；拿到足够事实后直接回答，通常 1-3 次工具调用即可。"
+    "7. 不要重复调用已调用过的工具；拿到足够事实后直接回答，通常 1-3 次工具调用即可；\n"
+    "8. 内置场景先用 load_scenario 加载，再传 scenario 给 run_tax_health_check，不要手工复制完整数据；"
+    "上传场景直接传 scenario='upload'。\n"
+    "9. 如果 run_tax_health_check 返回错误，修正参数重试；在拿到真实结果前不要下任何风险结论。"
 )
 
 
@@ -45,20 +48,38 @@ def _load_context(scenario, profile, invoices, fund_flows, contracts, external_d
 
 
 def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):
-    context = _load_context(scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources)
-    context_text = json.dumps({
-        "当前企业数据": {
-            "profile": context["company_profile"],
-            "invoices": context["invoices"],
-            "fund_flows": context["fund_flows"],
-            "contracts": context["contracts"],
-        }
-    }, ensure_ascii=False)[:8000]
+    if profile is not None:
+        tools.set_data("upload", {
+            "company_profile": profile,
+            "invoices": invoices or [],
+            "fund_flows": fund_flows or [],
+            "contracts": contracts or [],
+            "external_docs": external_docs or [],
+            "data_sources": data_sources or [],
+        })
+        context_text = "当前为上传数据场景，句柄为 upload；请用 run_tax_health_check(scenario='upload') 体检。"
+    else:
+        context_text = (
+            f"当前内置场景：{scenario}；请先 load_scenario('{scenario}')，"
+            f"再用 run_tax_health_check(scenario='{scenario}') 体检。"
+        )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"当前演示数据如下（可调用 get_demo_scenario 重新获取）：\n{context_text}\n\n用户问题：{user_message}"},
+        {"role": "user", "content": f"{context_text}\n\n用户问题：{user_message}"},
     ]
     answer, trace = llm.chat_with_tools(messages, tools.tool_schemas())
+    health_ok = any(
+        t.get("ok") and t.get("tool") == "run_tax_health_check"
+        and "error" not in str(t.get("result"))
+        for t in trace
+    )
+    if not health_ok:
+        offline = _run_offline_agent(
+            user_message, scenario, profile, invoices, fund_flows, contracts,
+            external_docs, data_sources,
+        )
+        offline["answer"] = offline["answer"] + "\n\n在线模式未拿到有效体检结果，以上为规则引擎结果。"
+        return offline
     return {"answer": answer, "trace": trace, "mode": "llm"}
 
 

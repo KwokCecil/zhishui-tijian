@@ -6,6 +6,7 @@
 """
 
 import json
+import re
 
 import pandas as pd
 
@@ -50,6 +51,11 @@ def _to_records(df):
 
 
 TOOLS = []
+DATA_CONTEXT = {}
+
+
+def set_data(handle, data):
+    DATA_CONTEXT[handle] = data
 
 
 def tool(name, description, parameters, required):
@@ -67,15 +73,15 @@ def tool(name, description, parameters, required):
 
 @tool(
     "run_tax_health_check",
-    "对企业进行税务健康检查：输入企业指标、发票、资金流水、合同（均为 JSON），"
-    "运行 30 条原子规则 + 5 条组合规则（G001-G005），返回命中特征清单、风险指数、风险等级和监管视角 Top3。"
-    "判定完全由规则完成，结果带特征ID与证据，可溯源。",
+    "对企业进行税务健康检查。内置演示场景只需传 scenario=场景名（先调 load_scenario），"
+    "上传数据场景传 scenario='upload'，不要手工复制完整数据。"
+    "运行 30 条原子规则 + 5 条组合规则，返回命中特征清单、风险指数、风险等级和监管视角 Top3。",
     {
         "type": "object",
         "properties": {
             "profile": {
                 "type": "object",
-                "description": "企业指标，字段见项目 README 的 PROFILE_COLS",
+                "description": "企业指标，可选；与 scenario 二选一",
             },
             "invoices": {
                 "type": "array",
@@ -102,23 +108,48 @@ def tool(name, description, parameters, required):
                 "items": {"type": "object"},
                 "description": "数据源清单，字段：数据源/来源方/可否篡改/版本/留存月数/可信度",
             },
+            "scenario": {
+                "type": "string",
+                "enum": ["clean", "risk", "fuel", "solar", "lotus", "upload"],
+                "description": "已加载的场景句柄；内置场景先调 load_scenario",
+            },
         },
     },
-    ["profile"],
+    [],
 )
-def run_tax_health_check(profile, invoices=None, fund_flows=None, contracts=None, external_docs=None, data_sources=None):
-    invoices = invoices or []
-    fund_flows = fund_flows or []
-    contracts = contracts or []
-    external_docs = external_docs or []
-    data_sources = data_sources or []
+def run_tax_health_check(profile=None, invoices=None, fund_flows=None, contracts=None,
+                         external_docs=None, data_sources=None, scenario=None):
+    if scenario:
+        raw = DATA_CONTEXT.get(scenario)
+        if raw is None:
+            raw = generate_data.build_scenario(scenario)
+        profile = raw["company_profile"]
+        invoices = raw["invoices"]
+        fund_flows = raw["fund_flows"]
+        contracts = raw["contracts"]
+        external_docs = raw["external_docs"]
+        data_sources = raw["data_sources"]
+    if profile is None:
+        return {"error": "缺少 profile 或 scenario"}
+    if not isinstance(invoices, pd.DataFrame):
+        invoices = invoices or []
+    if not isinstance(fund_flows, pd.DataFrame):
+        fund_flows = fund_flows or []
+    if not isinstance(contracts, pd.DataFrame):
+        contracts = contracts or []
+    if not isinstance(external_docs, pd.DataFrame):
+        external_docs = external_docs or []
+    if not isinstance(data_sources, pd.DataFrame):
+        data_sources = data_sources or []
+    if isinstance(profile, dict):
+        profile = _profile_df(profile)
     hits = rules.run_all(
-        _profile_df(profile),
-        _invoices_df(invoices),
-        _funds_df(fund_flows),
-        _contracts_df(contracts),
-        _external_docs_df(external_docs),
-        _data_sources_df(data_sources),
+        profile,
+        invoices if isinstance(invoices, pd.DataFrame) else _invoices_df(invoices),
+        fund_flows if isinstance(fund_flows, pd.DataFrame) else _funds_df(fund_flows),
+        contracts if isinstance(contracts, pd.DataFrame) else _contracts_df(contracts),
+        external_docs if isinstance(external_docs, pd.DataFrame) else _external_docs_df(external_docs),
+        data_sources if isinstance(data_sources, pd.DataFrame) else _data_sources_df(data_sources),
     )
     summary = scoring.risk_summary(hits)
     return {"summary": summary, "hits": hits}
@@ -172,6 +203,41 @@ def answer_policy_question(query):
 
 
 @tool(
+    "load_scenario",
+    "加载内置演示场景，返回企业概况与数据摘要，并把数据注册到场景句柄。"
+    "之后调用 run_tax_health_check 时传 scenario=场景名即可，不要复制完整数据。",
+    {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "enum": ["clean", "risk", "fuel", "solar", "lotus"],
+                "description": "场景名",
+            },
+        },
+    },
+    ["name"],
+)
+def load_scenario(name):
+    if name not in generate_data.SCENARIOS:
+        return {"error": f"未知场景 {name}，可选 {list(generate_data.SCENARIOS)}"}
+    data = generate_data.build_scenario(name)
+    set_data(name, data)
+    p = data["company_profile"].iloc[0].to_dict()
+    return {
+        "scenario": name,
+        "企业概况": {
+            k: p.get(k) for k in (
+                "企业ID", "行业", "纳税人类型", "营业收入(万元)",
+                "个税申报人数", "应纳税所得额(万元)", "纳税信用等级",
+            )
+        },
+        "row_counts": {k: len(v) for k, v in data.items()},
+        "note": "数据已就绪，请用 run_tax_health_check(scenario=场景名) 体检，不要再传完整数据",
+    }
+
+
+@tool(
     "get_demo_scenario",
     "获取内置演示场景的四类模拟数据（JSON）。场景：clean 全正常、risk 混合风险、"
     "fuel 加油站模板、solar 小微临界预警链、lotus 农产品收购发票。返回数据可直接传给 run_tax_health_check。",
@@ -191,6 +257,7 @@ def get_demo_scenario(name):
     if name not in generate_data.SCENARIOS:
         return {"error": f"未知场景 {name}，可选 {list(generate_data.SCENARIOS)}"}
     data = generate_data.build_scenario(name)
+    set_data(name, data)
     return {
         "scenario": name,
         "company_profile": data["company_profile"].iloc[0].to_dict(),
@@ -320,6 +387,27 @@ def execute_tool(name, arguments):
     """执行工具。arguments 为已解析的 dict，或 JSON 字符串。"""
     if name not in TOOL_MAP:
         raise KeyError(f"未知工具: {name}")
-    if isinstance(arguments, str):
-        arguments = json.loads(arguments)
+    if not isinstance(arguments, dict):
+        arguments = _parse_arguments(arguments)
     return TOOL_MAP[name]["execute"](**arguments)
+
+
+def _parse_arguments(arguments):
+    """容错解析模型生成的 JSON 参数：剥代码围栏、截取大括号区间、清理尾逗号。"""
+    text = str(arguments).strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        cand = text[start:end + 1]
+        cand = re.sub(r",\s*([}\]])", r"\1", cand)
+        try:
+            return json.loads(cand)
+        except Exception:
+            pass
+    raise ValueError(f"参数 JSON 解析失败: {text[:120]}")

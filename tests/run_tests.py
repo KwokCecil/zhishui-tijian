@@ -555,6 +555,24 @@ def test_47_combos_applied_to_scenarios():
     assert summary6["level"] == "高风险" and summary6["score"] == 60, summary6
 
 
+def test_48_scenario_handle_and_json_parse():
+    summary = tools.execute_tool("load_scenario", {"name": "risk"})
+    assert "企业概况" in summary and summary["row_counts"]["invoices"] > 0, summary
+    r = tools.execute_tool("run_tax_health_check", {"scenario": "risk"})
+    assert r["summary"]["level"] == "高风险", r
+
+    assert tools._parse_arguments('{"name": "risk",}') == {"name": "risk"}
+    assert tools._parse_arguments('```json\n{"name":"solar"}\n```') == {"name": "solar"}
+
+    tools.set_data("upload", {
+        "company_profile": {"行业": "软件和信息技术服务业", "资产总额(万元)": 100},
+        "invoices": [], "fund_flows": [], "contracts": [],
+        "external_docs": [], "data_sources": [],
+    })
+    r2 = tools.execute_tool("run_tax_health_check", {"scenario": "upload"})
+    assert r2["summary"]["level"] == "低风险", r2
+
+
 def test_46_gov_source_still_tamperable():
     p = profile({
         "行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "新国标",
@@ -711,6 +729,7 @@ def main():
     case(45, "数据源可信度两步判定（内部自洽≠真实）", test_45_source_credibility_two_step)
     case(46, "监管机构来源但可篡改 → 仍不可信", test_46_gov_source_still_tamperable)
     case(47, "G002-G005 落地到场景（risk/fuel/lotus）", test_47_combos_applied_to_scenarios)
+    case(48, "场景句柄传参与容错JSON解析", test_48_scenario_handle_and_json_parse)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)
