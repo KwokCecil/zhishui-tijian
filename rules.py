@@ -248,6 +248,41 @@ def check_r07(fund_flows):
     return _rule("R202", "个人账户收付款占比高", False, "高", f"个人账户占比 {_pct(personal, total) or 0:.1f}%（阈值10%）", "")
 
 
+def check_r203(fund_flows):
+    """R203 资金回流：收入后短期内向同一对方支出，或备注含回流/转回。"""
+    if fund_flows.empty or "收付方向" not in fund_flows.columns:
+        return _rule("R203", "资金回流", False, "高", "无资金流水数据", "")
+    flows = fund_flows.copy()
+    flows["金额(元)"] = flows["金额(元)"].apply(_num)
+    flows["日期"] = pd.to_datetime(flows["流水日期"], errors="coerce")
+    incomes = flows[flows["收付方向"].isin(["收入", "收款", "收"])]
+    expenses = flows[flows["收付方向"].isin(["支出", "付款", "付"])]
+    for _, inc in incomes.iterrows():
+        name = str(inc.get("对方名称", "")).strip()
+        if not name:
+            continue
+        window = expenses[
+            (expenses["对方名称"].astype(str).str.strip() == name)
+            & (expenses["日期"] >= inc["日期"])
+            & ((expenses["日期"] - inc["日期"]).dt.days <= 7)
+        ]
+        if not window.empty:
+            e = window.iloc[0]
+            return _rule(
+                "R203", "资金回流", True, "高",
+                f"收入 {inc['金额(元)']:,.0f} 元后 {int((e['日期'] - inc['日期']).days)} 天内"
+                f"向同一对方支出 {e['金额(元)']:,.0f} 元，疑似资金回流",
+                "资金回流是虚开与隐匿收入的直接证据：核查回流资金对应的业务实质、合同与交付物。",
+            )
+    if flows["备注"].astype(str).str.contains("回流|转回", na=False).any():
+        return _rule(
+            "R203", "资金回流", True, "高",
+            "资金流水备注含'回流/转回'字样",
+            "核查回流资金对应的业务实质，是否构成资金回流闭环。",
+        )
+    return _rule("R203", "资金回流", False, "高", "未发现资金回流", "")
+
+
 def check_r09(invoices):
     """R301 风险企业传导：上游/下游存在非正常户、走逃失联。"""
     if invoices.empty or "对方状态" not in invoices.columns:
@@ -496,6 +531,21 @@ def check_r24(profile):
     return _rule("R901", "集群注册同址", False, "高", f"关联户数 {count:.0f}（阈值5户）", "")
 
 
+def check_r903(profile):
+    """R903 关联户贴线：同一控制人关联户中多户指标位于优惠门槛临界区间。"""
+    related = _num(profile.get("关联户数"))
+    near = _num(profile.get("关联户贴线数"))
+    if near is None or near == 0:
+        return _rule("R903", "关联户贴线", False, "中", "关联户贴线数缺失或为0", "")
+    if near >= 2:
+        return _rule(
+            "R903", "关联户贴线", True, "中",
+            f"同一控制人关联 {related:.0f} 户，其中 {near:.0f} 户指标位于优惠门槛临界区间",
+            "单户看都合法、跨户汇总才暴露拆分：核查各户业务实质、人员、场地与资金是否独立。",
+        )
+    return _rule("R903", "关联户贴线", False, "中", f"关联户贴线数 {near:.0f}（阈值2户）", "")
+
+
 def check_r27(invoices):
     """R902 单一服务类品目集中：咨询费/服务费/管理费占销项金额>80%。"""
     sales = _sales_invoices(invoices)
@@ -699,20 +749,39 @@ def check_r38(invoices, fund_flows):
 # 只登记已实现的规则；新增规则按所属大类顺延序号，不设预留位。
 RULE_CATEGORIES = {
     "发票与开票": ["R101", "R102", "R103", "R104"],
-    "资金与结算": ["R201", "R202"],
+    "资金与结算": ["R201", "R202", "R203"],
     "上下游与供应链": ["R301"],
     "申报与财务": ["R401", "R402"],
     "人资与信用": ["R501", "R502"],
     "资格与优惠": ["R601", "R602", "R603", "R604", "R605"],
     "数据质量与完整性": ["R701", "R702", "R703", "R704"],
     "行业模板": ["R801", "R802", "R803", "R804", "R805", "R806"],
-    "关联与团伙": ["R901", "R902"],
+    "关联与团伙": ["R901", "R902", "R903"],
 }
 CATEGORY_ORDER = list(RULE_CATEGORIES)
 CATEGORY_OF = {rid: cat for cat, ids in RULE_CATEGORIES.items() for rid in ids}
 
 # 组合规则（G 系列）：由原子规则推导，与原子规则分开编号、分开执行（G=Group，规则组）。
 # G001 起编号，新组合按 G002、G003… 追加。
+def _make_combo_check(combo_id, name, level, depends, min_hits, suggestion):
+    """组合规则检查工厂：构成规则命中达到 min_hits 即命中。"""
+    def check(p, hits):
+        ids = {h.get("rule_id") for h in hits}
+        hit = [d for d in depends if d in ids]
+        if len(hit) >= min_hits:
+            return _rule(
+                combo_id, name, True, level,
+                f"构成规则 {'、'.join(hit)} 同时命中",
+                suggestion,
+            )
+        return _rule(
+            combo_id, name, False, level,
+            f"构成规则命中 {len(hit)}/{len(depends)}，不足 {min_hits} 条",
+            "",
+        )
+    return check
+
+
 COMBO_RULES = {
     "G001": {
         "name": "临界调减联动",
@@ -720,6 +789,46 @@ COMBO_RULES = {
         "depends_on": ["R601", "R602"],
         "label": "R601 小微临界 + R602 大额调减",
         "check": check_r19,
+    },
+    "G002": {
+        "name": "拆分享受优惠联动",
+        "level": "高",
+        "depends_on": ["R901", "R903"],
+        "label": "R901 集群注册同址 + R903 关联户贴线",
+        "check": _make_combo_check(
+            "G002", "拆分享受优惠联动", "高", ["R901", "R903"], 2,
+            "同一控制人关联多户且多户贴线，涉嫌人为拆分享受优惠：核查各户业务实质与独立性。",
+        ),
+    },
+    "G003": {
+        "name": "虚开风险联动",
+        "level": "高",
+        "depends_on": ["R104", "R201", "R203"],
+        "label": "R104 进销项不匹配 + R201 三流不一致 + R203 资金回流",
+        "check": _make_combo_check(
+            "G003", "虚开风险联动", "高", ["R104", "R201", "R203"], 2,
+            "无真实业务虚开画像：核对合同、物流、交付物与资金流向。",
+        ),
+    },
+    "G004": {
+        "name": "特殊凭证对象联动",
+        "level": "高",
+        "depends_on": ["R804", "R805", "R806"],
+        "label": "R804 凭证对象身份存疑 + R805 单户金额异常 + R806 业务流不匹配",
+        "check": _make_combo_check(
+            "G004", "特殊凭证对象联动", "高", ["R804", "R805", "R806"], 2,
+            "特殊凭证对象与限额合规风险：输出身份与业务流核验清单，必要时要求代开补正。",
+        ),
+    },
+    "G005": {
+        "name": "申报数据可信度联动",
+        "level": "高",
+        "depends_on": ["R701", "R702", "R703", "R704"],
+        "label": "R701 数据完整性 + R702 上游发票缺失 + R703 外部单据比对 + R704 数据源可信度",
+        "check": _make_combo_check(
+            "G005", "申报数据可信度联动", "高", ["R701", "R702", "R703", "R704"], 2,
+            "申报数据可信度不足：用不可篡改的独立来源交叉验证后再下结论。",
+        ),
     },
 }
 
@@ -731,6 +840,7 @@ _RULES = [
     ("R104", "进销项品名不匹配", "高", check_r04),
     ("R201", "三流不一致", "高", check_r06),
     ("R202", "个人账户收付款占比高", "高", check_r07),
+    ("R203", "资金回流", "高", check_r203),
     ("R301", "风险企业传导", "高", check_r09),
     ("R401", "增值税税负率异常", "中", check_r12),
     ("R501", "个税与社保人数不一致", "中", check_r15),
@@ -744,6 +854,7 @@ _RULES = [
     ("R803", "申报单价偏离区域均价", "中", check_r23),
     ("R901", "集群注册同址", "高", check_r24),
     ("R902", "单一服务类品目集中", "中", check_r27),
+    ("R903", "关联户贴线", "中", check_r903),
     ("R605", "资格-优惠不匹配", "高", check_r30),
     ("R701", "数据完整性异常", "高", check_r31),
     ("R702", "上游发票缺失", "中", check_r32),
@@ -786,6 +897,8 @@ def run_all(profile, invoices, fund_flows=None, contracts=None, external_docs=No
             elif rule_id == "R401":
                 result = fn(invoices, p)
             elif rule_id == "R202":
+                result = fn(fund_flows)
+            elif rule_id == "R203":
                 result = fn(fund_flows)
             elif rule_id in ("R101", "R102", "R103", "R104", "R301", "R902", "R804", "R805"):
                 result = fn(invoices)

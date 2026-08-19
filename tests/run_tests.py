@@ -451,8 +451,12 @@ def test_43_rule_metadata_category_order():
     assert rules.CATEGORY_OF["R101"] == "发票与开票", rules.CATEGORY_OF
     assert rules.CATEGORY_OF["R602"] == "资格与优惠", rules.CATEGORY_OF
     assert rules.COMBO_RULES["G001"]["depends_on"] == ["R601", "R602"], rules.COMBO_RULES
-    assert set(rules.COMBO_RULES) == {"G001"}, rules.COMBO_RULES
+    assert set(rules.COMBO_RULES) == {"G001", "G002", "G003", "G004", "G005"}, rules.COMBO_RULES
     assert "legacy_id" not in rules.COMBO_RULES["G001"], rules.COMBO_RULES
+    assert rules.COMBO_RULES["G002"]["depends_on"] == ["R901", "R903"], rules.COMBO_RULES
+    assert rules.COMBO_RULES["G003"]["depends_on"] == ["R104", "R201", "R203"], rules.COMBO_RULES
+    assert rules.COMBO_RULES["G004"]["depends_on"] == ["R804", "R805", "R806"], rules.COMBO_RULES
+    assert rules.COMBO_RULES["G005"]["depends_on"] == ["R701", "R702", "R703", "R704"], rules.COMBO_RULES
     assert "R17" not in rules.CATEGORY_OF and "R601" in rules.CATEGORY_OF, rules.CATEGORY_OF
 
     order = [r[0] for r in rules.RULE_CHECKS]
@@ -515,6 +519,40 @@ def test_46_gov_source_still_tamperable():
     r704 = rule(hits, "R704")
     assert r704["hit"] and "可信度低" in r704["evidence"], r704
     assert "内部自洽" not in r704["evidence"], r704
+
+
+def test_47_combos_applied_to_scenarios():
+    case1 = generate_data.build_scenario("case1")
+    hits1 = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
+    ids1 = {h["rule_id"] for h in hits1}
+    assert "G001" in ids1 and not (ids1 & {"G002", "G003", "G004", "G005"}), ids1
+
+    risk = generate_data.build_scenario("risk")
+    hits_r = rules.run_all(risk["company_profile"], risk["invoices"], risk["fund_flows"], risk["contracts"])
+    ids_r = {h["rule_id"] for h in hits_r}
+    assert "G002" in ids_r and "G003" in ids_r, ids_r
+    assert rule(hits_r, "R901")["merged_into"] == "G002", rule(hits_r, "R901")
+    assert rule(hits_r, "R104")["merged_into"] == "G003", rule(hits_r, "R104")
+    summary_r = scoring.risk_summary(hits_r)
+    assert summary_r["level"] == "高风险" and summary_r["score"] == 100, summary_r
+
+    fuel = generate_data.build_scenario("fuel")
+    hits_f = rules.run_all(
+        fuel["company_profile"], fuel["invoices"], fuel["fund_flows"], fuel["contracts"],
+        fuel["external_docs"], fuel["data_sources"],
+    )
+    ids_f = {h["rule_id"] for h in hits_f}
+    assert "G005" in ids_f, ids_f
+    assert rule(hits_f, "R701")["merged_into"] == "G005", rule(hits_f, "R701")
+    assert rule(hits_f, "R704")["merged_into"] == "G005", rule(hits_f, "R704")
+
+    case6 = generate_data.build_scenario("case6")
+    hits6 = rules.run_all(case6["company_profile"], case6["invoices"], case6["fund_flows"], case6["contracts"])
+    ids6 = {h["rule_id"] for h in hits6}
+    assert "G004" in ids6, ids6
+    assert rule(hits6, "R804")["merged_into"] == "G004", rule(hits6, "R804")
+    summary6 = scoring.risk_summary(hits6)
+    assert summary6["level"] == "高风险" and summary6["score"] == 60, summary6
 
 
 def test_46_gov_source_still_tamperable():
@@ -672,6 +710,7 @@ def main():
     case(44, "外部单据比对 + 数据源可信度（fuel 场景）", test_44_external_docs_and_source_credibility)
     case(45, "数据源可信度两步判定（内部自洽≠真实）", test_45_source_credibility_two_step)
     case(46, "监管机构来源但可篡改 → 仍不可信", test_46_gov_source_still_tamperable)
+    case(47, "G002-G005 落地到场景（risk/fuel/case6）", test_47_combos_applied_to_scenarios)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)
