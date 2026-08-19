@@ -580,6 +580,20 @@ def test_49_answer_sanitized_no_tool_names():
     assert "小微资格判定" in clean and "优惠政策匹配" in clean, clean
     assert "run_tax_health_check" not in agent._clean_answer("run_tax_health_check 结果正常"), clean
     assert agent._clean_answer("a\n\n\n\nb") == "a\n\nb", agent._clean_answer("a\n\n\n\nb")
+    assert agent._clean_answer("结论：合规。\n需要我生成完整体检报告吗？") == "结论：合规。"
+
+
+def test_50_offtopic_and_report_intent():
+    r = agent.run_agent("1+1等于几？", scenario="risk")
+    assert r["mode"] == "rule" and "税务体检范围" in r["answer"], r
+    assert "风险指数" not in r["answer"], r
+
+    r2 = agent.run_agent("几点了？", scenario="risk")
+    assert "风险指数" not in r2["answer"], r2
+
+    r3 = agent.run_agent("生成报告吧", scenario="risk")
+    assert "风险指数" in r3["answer"] and "##" in r3["answer"], r3
+    assert any(t["tool"] == "run_tax_health_check" for t in r3["trace"]), r3["trace"]
 
 
 def test_46_gov_source_still_tamperable():
@@ -740,6 +754,7 @@ def main():
     case(47, "G002-G005 落地到场景（risk/fuel/lotus）", test_47_combos_applied_to_scenarios)
     case(48, "场景句柄传参与容错JSON解析", test_48_scenario_handle_and_json_parse)
     case(49, "回答清洗：禁止泄露工具名", test_49_answer_sanitized_no_tool_names)
+    case(50, "无关问题短路 + 报告请求直接生成", test_50_offtopic_and_report_intent)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

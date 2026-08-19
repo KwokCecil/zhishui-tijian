@@ -40,6 +40,46 @@ TOOL_NAME_LABELS = {
     "answer_policy_question": "政策问答",
 }
 
+OFFTOPIC_KEYWORDS = (
+    "天气", "几点", "时间", "1+1", "数学", "你是谁", "名字",
+    "在吗", "吃饭", "股票", "新闻", "唱歌", "笑话",
+)
+REPORT_KEYWORDS = ("报告", "生成", "出报告", "下载")
+
+
+def _is_offtopic(message):
+    m = message.strip().lower()
+    return any(k in m for k in OFFTOPIC_KEYWORDS)
+
+
+def _report_intent(message):
+    return any(k in message for k in REPORT_KEYWORDS)
+
+
+def _build_report(scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):
+    """用户要求生成报告时直接调用报告工具，不让模型自由发挥。"""
+    trace = []
+    if profile is not None:
+        tools.set_data("upload", {
+            "company_profile": profile,
+            "invoices": invoices or [],
+            "fund_flows": fund_flows or [],
+            "contracts": contracts or [],
+            "external_docs": external_docs or [],
+            "data_sources": data_sources or [],
+        })
+        health = tools.execute_tool("run_tax_health_check", {"scenario": "upload"})
+        p = profile
+    else:
+        tools.execute_tool("load_scenario", {"name": scenario})
+        health = tools.execute_tool("run_tax_health_check", {"scenario": scenario})
+        p = tools.DATA_CONTEXT[scenario]["company_profile"].iloc[0].to_dict()
+    matched = tools.execute_tool("match_policy_cards", {"profile": p})
+    report = tools.generate_report(health["hits"], health["summary"], matched)
+    trace.append({"tool": "run_tax_health_check", "arguments": "{}", "ok": True, "result": health})
+    trace.append({"tool": "match_policy_cards", "arguments": "{}", "ok": True, "result": matched})
+    return {"answer": report["report"], "trace": trace, "mode": report.get("mode", "offline")}
+
 
 def _sanitize_answer(text):
     """硬兜底：把答案里泄露的工具名替换成自然语言，禁止内部机制出现在用户面前。"""
@@ -53,12 +93,25 @@ def _clean_answer(text):
     text = _sanitize_answer(text)
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    lines = text.strip().split("\n")
+    while lines and re.search(r"(需要我|要我|是否(要|需)|要不要)[^。\n]{0,30}吗[？?]?$", lines[-1].strip()):
+        lines.pop()
+        if lines and not lines[-1].strip():
+            lines.pop()
+    return "\n".join(lines).strip()
 
 
 def run_agent(user_message, scenario="risk", profile=None, invoices=None, fund_flows=None, contracts=None,
               external_docs=None, data_sources=None):
     """返回 {"answer", "trace", "mode"}。"""
+    if _is_offtopic(user_message):
+        return {
+            "answer": "这个问题不在税务体检范围内，请聚焦企业税务风险、政策优惠或申报建议。",
+            "trace": [],
+            "mode": "rule",
+        }
+    if _report_intent(user_message):
+        return _build_report(scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources)
     if llm.available():
         return _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts,
                               external_docs, data_sources)
