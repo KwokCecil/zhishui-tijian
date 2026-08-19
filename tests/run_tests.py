@@ -503,6 +503,34 @@ def test_45_source_credibility_two_step():
     assert not any(h["rule_id"] == "R704" for h in hits2), [h["rule_id"] for h in hits2]
 
 
+def test_46_gov_source_still_tamperable():
+    p = profile({
+        "行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "新国标",
+    })
+    gov_tamperable = generate_data._df(generate_data.DATA_SOURCE_COLS, [
+        ("加油机税控芯片数据（商务局联网）", "监管机构", "可破解", "旧标准", "长期", "低"),
+        ("申报数据", "企业自报", "可", "申报表", "长期", "低"),
+    ])
+    hits = rules.run_all(p, invoices([]), funds([]), contracts([]), None, gov_tamperable)
+    r704 = rule(hits, "R704")
+    assert r704["hit"] and "内部自洽不等于真实" in r704["evidence"], r704
+    assert "上报监管机构" in r704["evidence"], r704
+
+
+def test_46_gov_source_still_tamperable():
+    p = profile({
+        "行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "新国标",
+    })
+    gov_tamperable = generate_data._df(generate_data.DATA_SOURCE_COLS, [
+        ("加油机税控芯片数据（商务局联网）", "监管机构", "可破解", "旧标准", "长期", "低"),
+        ("申报数据", "企业自报", "可", "申报表", "长期", "低"),
+    ])
+    hits = rules.run_all(p, invoices([]), funds([]), contracts([]), None, gov_tamperable)
+    r704 = rule(hits, "R704")
+    assert r704["hit"] and "内部自洽不等于真实" in r704["evidence"], r704
+    assert "上报监管机构" in r704["evidence"], r704
+
+
 def test_39_risk_policy_link_general():
     case1 = generate_data.build_scenario("case1")
     hits1 = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
@@ -643,6 +671,7 @@ def main():
     case(43, "规则分类编号与组合规则元数据", test_43_rule_metadata_category_order)
     case(44, "外部单据比对 + 数据源可信度（fuel 场景）", test_44_external_docs_and_source_credibility)
     case(45, "数据源可信度两步判定（内部自洽≠真实）", test_45_source_credibility_two_step)
+    case(46, "监管机构来源但可篡改 → 仍不可信", test_46_gov_source_still_tamperable)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)
