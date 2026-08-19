@@ -2,6 +2,7 @@
 """Agent 对话入口：真实模式走 function calling，离线模式用关键词路由演示同一机制。"""
 
 import json
+import re
 
 import llm
 import tools
@@ -22,8 +23,27 @@ SYSTEM_PROMPT = (
     "9. 如果 run_tax_health_check 返回错误，修正参数重试；在拿到真实结果前不要下任何风险结论；\n"
     "10. 回答开头先给结论：风险指数、等级、命中条数，再列风险点；\n"
     "11. 能直接查的信息（如小微资格、可享优惠）用 check_small_micro / match_policy_cards 查完直接给出结论，"
-    "不要反问用户是否需要；反问只在需要用户做选择时使用。"
+    "不要反问用户是否需要；反问只在需要用户做选择时使用；\n"
+    "12. 回答中禁止出现任何工具/函数名称（如 load_scenario、run_tax_health_check、check_small_micro、"
+    "match_policy_cards、generate_report 等），一律用自然语言表达，例如直接说'符合小微条件、可享受小微低税率'。"
 )
+
+TOOL_NAME_LABELS = {
+    "check_small_micro": "小微资格判定",
+    "match_policy_cards": "优惠政策匹配",
+    "run_tax_health_check": "风险体检",
+    "load_scenario": "数据加载",
+    "get_demo_scenario": "场景数据",
+    "generate_report": "报告生成",
+    "answer_policy_question": "政策问答",
+}
+
+
+def _sanitize_answer(text):
+    """硬兜底：把答案里泄露的工具名替换成自然语言，禁止内部机制出现在用户面前。"""
+    for name, label in TOOL_NAME_LABELS.items():
+        text = re.sub(rf"\b{name}\b", label, text)
+    return text
 
 
 def run_agent(user_message, scenario="risk", profile=None, invoices=None, fund_flows=None, contracts=None,
@@ -83,7 +103,7 @@ def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contra
         )
         offline["answer"] = offline["answer"] + "\n\n在线模式未拿到有效体检结果，以上为规则引擎结果。"
         return offline
-    return {"answer": answer, "trace": trace, "mode": "llm"}
+    return {"answer": _sanitize_answer(answer), "trace": trace, "mode": "llm"}
 
 
 def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):

@@ -573,6 +573,14 @@ def test_48_scenario_handle_and_json_parse():
     assert r2["summary"]["level"] == "低风险", r2
 
 
+def test_49_answer_sanitized_no_tool_names():
+    raw = "结论：可调用 check_small_micro 确认小微资格，或 match_policy_cards 匹配优惠。"
+    clean = agent._sanitize_answer(raw)
+    assert "check_small_micro" not in clean and "match_policy_cards" not in clean, clean
+    assert "小微资格判定" in clean and "优惠政策匹配" in clean, clean
+    assert "run_tax_health_check" not in agent._sanitize_answer("run_tax_health_check 结果正常"), clean
+
+
 def test_46_gov_source_still_tamperable():
     p = profile({
         "行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "新国标",
@@ -730,6 +738,7 @@ def main():
     case(46, "监管机构来源但可篡改 → 仍不可信", test_46_gov_source_still_tamperable)
     case(47, "G002-G005 落地到场景（risk/fuel/lotus）", test_47_combos_applied_to_scenarios)
     case(48, "场景句柄传参与容错JSON解析", test_48_scenario_handle_and_json_parse)
+    case(49, "回答清洗：禁止泄露工具名", test_49_answer_sanitized_no_tool_names)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)
