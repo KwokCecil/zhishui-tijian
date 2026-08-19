@@ -431,19 +431,27 @@ if "chat_history" not in st.session_state:
 for role, content in st.session_state["chat_history"]:
     with st.chat_message(role):
         st.markdown(content)
+
+default_q = "这家公司有什么风险？"
+question = None
 prompt = st.chat_input("问它，例如：这家公司有什么风险？")
 if prompt:
+    question = prompt
+elif not st.session_state["chat_history"] and st.button(f"发送默认问题：{default_q}", key="send_default"):
+    question = default_q
+
+if question:
     if agent_data["scenario"] is None and agent_data["profile"] is None:
         with st.chat_message("assistant"):
             st.markdown("请先在左侧生成或上传数据。")
     else:
-        st.session_state["chat_history"].append(("user", prompt))
+        st.session_state["chat_history"].append(("user", question))
         with st.chat_message("user"):
-            st.markdown(prompt)
+            st.markdown(question)
         with st.spinner("Agent 正在调用工具…"):
             try:
                 result = agent.run_agent(
-                    prompt,
+                    question,
                     scenario=agent_data["scenario"] or "risk",
                     profile=agent_data["profile"],
                     invoices=agent_data["invoices"],
@@ -455,7 +463,7 @@ if prompt:
             except Exception as exc:  # noqa: BLE001
                 st.warning(f"在线模式失败：{exc}，已切换离线演示")
                 result = agent._run_offline_agent(
-                    prompt,
+                    question,
                     scenario=agent_data["scenario"] or "risk",
                     profile=agent_data["profile"],
                     invoices=agent_data["invoices"],

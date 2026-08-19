@@ -69,7 +69,7 @@ def chat_with_tools(messages, tools, max_turns=6):
             "tools": tools,
             "tool_choice": "auto",
             "temperature": 0.2,
-            "max_tokens": 2000,
+            "max_tokens": 800,
         }
         resp = requests.post(
             f"{cfg['base_url']}/chat/completions",
