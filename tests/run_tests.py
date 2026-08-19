@@ -221,7 +221,7 @@ def test_17_fuel_three_source():
     data = generate_data.build_scenario("fuel")
     hits = hits_of(data)
     r22 = rule(hits, "R802")
-    assert r22["hit"] and "以进控销" in r22["suggestion"], r22
+    assert r22["hit"] and "外部来源" in r22["suggestion"], r22
     assert any(h["rule_id"] in ("R801", "R803", "R701", "R702", "R703", "R704") for h in hits), hits
 
 
@@ -238,7 +238,7 @@ def test_18_gang_cluster_features():
 def test_19_qualification_deduction_mismatch():
     p = profile({"是否高新技术企业": "否", "是否享受加计抵减": "是", "资产总额(万元)": 100})
     r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R605")
-    assert r["hit"] and "高企资格复核清单" in r["suggestion"], r
+    assert r["hit"] and "自查高企资格" in r["suggestion"], r
 
 
 def test_20_fuel_data_gap():
@@ -250,7 +250,7 @@ def test_20_fuel_data_gap():
 def test_21_upstream_docs_vs_local():
     p = profile({"行业": "成品油零售", "资产总额(万元)": 100, "上游进油单存在": "是", "本地入库记录缺失": "是"})
     r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R703")
-    assert r["hit"] and "锚点" in r["suggestion"], r
+    assert r["hit"] and "反向核对" in r["suggestion"], r
 
 
 def test_22_device_chip_risk():
