@@ -154,10 +154,13 @@ def cond_text(c):
 with st.sidebar:
     st.header("数据源")
     mode = st.radio("选择方式", ["内置演示场景", "上传 CSV"], index=0)
-    data = None
-    scenario = None
+    for key in ("data", "scenario", "report"):
+        if key not in st.session_state:
+            st.session_state[key] = None
     if mode == "内置演示场景":
-        scenario = st.selectbox("场景", list(generate_data.SCENARIOS.keys()))
+        keys = list(generate_data.SCENARIOS)
+        default_idx = keys.index(st.session_state["scenario"]) if st.session_state["scenario"] in keys else 0
+        scenario = st.selectbox("场景", keys, index=default_idx)
         st.caption({
             "clean": "对照组 · 低风险",
             "risk": "软件企业 · 混合风险",
@@ -166,7 +169,9 @@ with st.sidebar:
             "lotus": "莲子加工 · 收购凭证",
         }[scenario])
         if st.button("生成并体检", type="primary"):
-            data = generate_data.build_scenario(scenario)
+            st.session_state["data"] = generate_data.build_scenario(scenario)
+            st.session_state["scenario"] = scenario
+            st.session_state["report"] = None
     else:
         up_profile = st.file_uploader("企业指标 CSV", type="csv")
         up_invoices = st.file_uploader("发票明细 CSV", type="csv")
@@ -175,7 +180,7 @@ with st.sidebar:
         up_external = st.file_uploader("外部单据 CSV（可选）", type="csv")
         up_sources = st.file_uploader("数据源清单 CSV（可选）", type="csv")
         if st.button("开始体检", type="primary"):
-            data = load_from_upload({
+            st.session_state["data"] = load_from_upload({
                 "company_profile": up_profile,
                 "invoices": up_invoices,
                 "fund_flows": up_funds,
@@ -183,6 +188,12 @@ with st.sidebar:
                 "external_docs": up_external,
                 "data_sources": up_sources,
             })
+            st.session_state["scenario"] = None
+            st.session_state["report"] = None
+
+data = st.session_state.get("data")
+if data is not None and st.session_state.get("scenario"):
+    scenario = st.session_state["scenario"]
 
 if mode == "内置演示场景" and scenario:
     g = SCENARIO_GUIDE[scenario]
@@ -372,12 +383,19 @@ with st.expander("指数怎么算"):
 
 st.subheader("AI 体检报告")
 if st.button("生成报告", type="secondary"):
-    report = tools.generate_report(hits, summary, matched)
-    st.markdown(report["report"])
+    st.session_state["report"] = tools.generate_report(hits, summary, matched)
+rep = st.session_state.get("report")
+if rep:
+    st.markdown(rep["report"])
+    if rep.get("mode") == "llm":
+        st.caption("本次报告由大模型生成")
+    else:
+        err = f"（{rep.get('error')}）" if rep.get("error") else ""
+        st.caption(f"本次报告使用离线模板{err}")
 elif llm.available():
-    st.caption("已配置模型 API")
+    st.caption("已配置模型 API，点击生成报告")
 else:
-    st.caption("未配置模型 API，使用离线模板")
+    st.caption("未配置模型 API，将使用离线模板")
 
 st.subheader("Agent 对话")
 if mode == "内置演示场景":

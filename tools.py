@@ -251,6 +251,7 @@ def generate_report(hits, summary, matched=None):
         "summary": summary,
         "matched": matched,
     }
+    error = ""
     try:
         text = complete(
             "你是税务数字化产品专家。把下面的结构化体检结果翻译成一份面向企业财务人员的"
@@ -259,10 +260,10 @@ def generate_report(hits, summary, matched=None):
             f"\n\n结构化结果：\n{json.dumps(payload, ensure_ascii=False, indent=2)}",
         )
         if text and text.strip():
-            return {"report": text.strip()}
-    except Exception:
-        pass
-    return {"report": _default_report(hits, summary, matched)}
+            return {"report": text.strip(), "mode": "llm"}
+    except Exception as exc:  # noqa: BLE001
+        error = str(exc)
+    return {"report": _default_report(hits, summary, matched), "mode": "offline", "error": error}
 
 
 TOOL_MAP = {t["name"]: t for t in TOOLS}
