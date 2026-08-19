@@ -456,24 +456,17 @@ with st.container(border=True):
             for t in st.session_state["last_trace"]:
                 st.markdown(f"**→ {t['tool']}**")
                 st.json(t["result"])
-    chat_placeholder = st.empty()
-    q_col, send_col = st.columns([4, 1])
-    question = q_col.text_input(
-        "问题",
-        value=st.session_state.get("agent_question", "这家公司有什么风险？"),
-        label_visibility="collapsed",
-        key="agent_question",
-    )
-    if send_col.button("发送", use_container_width=True):
-        question = question.strip() or "这家公司有什么风险？"
+    st.markdown(chat_html(st.session_state["chat_history"]), unsafe_allow_html=True)
+    prompt = st.chat_input("问它，例如：这家公司有什么风险？")
+    if prompt:
         if agent_data["scenario"] is None and agent_data["profile"] is None:
             st.session_state["chat_history"].append(("assistant", "请先在左侧生成或上传数据。"))
         else:
-            st.session_state["chat_history"].append(("user", question))
+            st.session_state["chat_history"].append(("user", prompt))
             with st.spinner("Agent 正在调用工具…"):
                 try:
                     result = agent.run_agent(
-                        question,
+                        prompt,
                         scenario=agent_data["scenario"] or "risk",
                         profile=agent_data["profile"],
                         invoices=agent_data["invoices"],
@@ -485,7 +478,7 @@ with st.container(border=True):
                 except Exception as exc:  # noqa: BLE001
                     st.warning(f"在线模式失败：{exc}，已切换离线演示")
                     result = agent._run_offline_agent(
-                        question,
+                        prompt,
                         scenario=agent_data["scenario"] or "risk",
                         profile=agent_data["profile"],
                         invoices=agent_data["invoices"],
@@ -497,7 +490,6 @@ with st.container(border=True):
             st.session_state["chat_history"].append(("assistant", result["answer"]))
             st.session_state["last_trace"] = result.get("trace") or []
             st.session_state["last_mode"] = result.get("mode", "")
-    with chat_placeholder.container():
-        st.markdown(chat_html(st.session_state["chat_history"]), unsafe_allow_html=True)
+        st.rerun()
 
 st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。")

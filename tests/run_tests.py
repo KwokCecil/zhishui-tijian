@@ -575,10 +575,11 @@ def test_48_scenario_handle_and_json_parse():
 
 def test_49_answer_sanitized_no_tool_names():
     raw = "结论：可调用 check_small_micro 确认小微资格，或 match_policy_cards 匹配优惠。"
-    clean = agent._sanitize_answer(raw)
+    clean = agent._clean_answer(raw)
     assert "check_small_micro" not in clean and "match_policy_cards" not in clean, clean
     assert "小微资格判定" in clean and "优惠政策匹配" in clean, clean
-    assert "run_tax_health_check" not in agent._sanitize_answer("run_tax_health_check 结果正常"), clean
+    assert "run_tax_health_check" not in agent._clean_answer("run_tax_health_check 结果正常"), clean
+    assert agent._clean_answer("a\n\n\n\nb") == "a\n\nb", agent._clean_answer("a\n\n\n\nb")
 
 
 def test_46_gov_source_still_tamperable():

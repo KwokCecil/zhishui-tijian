@@ -25,7 +25,9 @@ SYSTEM_PROMPT = (
     "11. 能直接查的信息（如小微资格、可享优惠）用 check_small_micro / match_policy_cards 查完直接给出结论，"
     "不要反问用户是否需要；反问只在需要用户做选择时使用；\n"
     "12. 回答中禁止出现任何工具/函数名称（如 load_scenario、run_tax_health_check、check_small_micro、"
-    "match_policy_cards、generate_report 等），一律用自然语言表达，例如直接说'符合小微条件、可享受小微低税率'。"
+    "match_policy_cards、generate_report 等），一律用自然语言表达，例如直接说'符合小微条件、可享受小微低税率'；\n"
+    "13. 与税务体检无关的问题（如天气、数学、闲聊）直接说明'这不属于税务体检范围'即可，"
+    "不要重复体检结果；只有用户明确要求时再提供体检摘要。"
 )
 
 TOOL_NAME_LABELS = {
@@ -44,6 +46,14 @@ def _sanitize_answer(text):
     for name, label in TOOL_NAME_LABELS.items():
         text = re.sub(rf"\b{name}\b", label, text)
     return text
+
+
+def _clean_answer(text):
+    """压缩空行与行尾空格，让 Markdown 排版更紧凑。"""
+    text = _sanitize_answer(text)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def run_agent(user_message, scenario="risk", profile=None, invoices=None, fund_flows=None, contracts=None,
@@ -103,7 +113,7 @@ def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contra
         )
         offline["answer"] = offline["answer"] + "\n\n在线模式未拿到有效体检结果，以上为规则引擎结果。"
         return offline
-    return {"answer": _sanitize_answer(answer), "trace": trace, "mode": "llm"}
+    return {"answer": _clean_answer(answer), "trace": trace, "mode": "llm"}
 
 
 def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):
