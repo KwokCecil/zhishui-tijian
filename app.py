@@ -432,15 +432,15 @@ for role, content in st.session_state["chat_history"]:
     with st.chat_message(role):
         st.markdown(content)
 
-default_q = "这家公司有什么风险？"
-question = None
-prompt = st.chat_input("问它，例如：这家公司有什么风险？")
-if prompt:
-    question = prompt
-elif not st.session_state["chat_history"] and st.button(f"发送默认问题：{default_q}", key="send_default"):
-    question = default_q
-
-if question:
+q_col, send_col = st.columns([4, 1])
+question = q_col.text_input(
+    "问题",
+    value="这家公司有什么风险？",
+    label_visibility="collapsed",
+    key="agent_question",
+)
+if send_col.button("发送", use_container_width=True):
+    question = question.strip() or "这家公司有什么风险？"
     if agent_data["scenario"] is None and agent_data["profile"] is None:
         with st.chat_message("assistant"):
             st.markdown("请先在左侧生成或上传数据。")
