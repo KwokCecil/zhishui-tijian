@@ -91,20 +91,20 @@ def check_r01(invoices):
     """R101 顶额开票：单张接近限额（演示：>=90000 元）且同月>=3张。"""
     sales = _sales_invoices(invoices)
     if sales.empty:
-        return _rule("R101", "顶额开票", False, "高", "无销项发票数据", "")
+        return _rule("R101", "顶额开票", False, "低", "无销项发票数据", "")
     sales = sales.copy()
     sales["金额(元)"] = sales["金额(元)"].apply(_num)
     # 顶额指接近开票限额（演示：万元版发票限额 99999 元，取 90000-101000 区间）
     top = sales[sales["金额(元)"].notna() & (sales["金额(元)"] >= 90000) & (sales["金额(元)"] <= 101000)]
     if top.empty:
-        return _rule("R101", "顶额开票", False, "高", f"无顶额发票（共{len(sales)}张）", "")
+        return _rule("R101", "顶额开票", False, "低", f"无顶额发票（共{len(sales)}张）", "")
     by_month = top["开票日期"].str[:7].value_counts()
     hit_month = by_month[by_month >= 3]
     if hit_month.empty:
-        return _rule("R101", "顶额开票", False, "高", f"顶额票{len(top)}张，但单月不足3张", "")
+        return _rule("R101", "顶额开票", False, "低", f"顶额票{len(top)}张，但单月不足3张", "")
     m = hit_month.index[0]
     return _rule(
-        "R101", "顶额开票", True, "高",
+        "R101", "顶额开票", True, "低",
         f"{m} 月顶额发票 {int(hit_month.iloc[0])} 张（金额≥90000元，接近开票限额99999元）",
         "核对开票业务实质：是否拆票规避限额/拆分客户；查验合同、物流、付款对应关系。",
     )
@@ -114,7 +114,7 @@ def check_r02(invoices):
     """R102 月末集中开票：当月发票集中在最后5个自然日，占比>60%。"""
     sales = _sales_invoices(invoices)
     if sales.empty:
-        return _rule("R102", "月末集中开票", False, "中", "无销项发票数据", "")
+        return _rule("R102", "月末集中开票", False, "低", "无销项发票数据", "")
     sales = sales.copy()
     sales["金额(元)"] = sales["金额(元)"].apply(_num).fillna(0)
     for month, group in sales.groupby(sales["开票日期"].str[:7]):
@@ -124,11 +124,11 @@ def check_r02(invoices):
         total = group["金额(元)"].sum()
         if total > 0 and last5 / total > 0.6:
             return _rule(
-                "R102", "月末集中开票", True, "中",
+                "R102", "月末集中开票", True, "低",
                 f"{month} 月最后5个自然日开票占比 {last5/total*100:.1f}%（演示阈值>60%）",
                 "核实集中开票的业务原因（合同结算节奏/业绩压力），关注是否存在跨期调节收入。",
             )
-    return _rule("R102", "月末集中开票", False, "中", "月末集中度未超演示阈值", "")
+    return _rule("R102", "月末集中开票", False, "低", "月末集中度未超演示阈值", "")
 
 
 def check_r03(invoices):
@@ -172,9 +172,9 @@ def check_r04(invoices):
 def check_r06(invoices, fund_flows, contracts):
     """R201 三流不一致：发票、资金、合同按合同号/对方名称比对不一致。"""
     if invoices.empty or fund_flows.empty:
-        return _rule("R201", "三流不一致", False, "高", "发票或资金数据缺失", "")
+        return _rule("R201", "三流不一致", False, "中", "发票或资金数据缺失", "")
     if "收付方向" not in fund_flows.columns:
-        return _rule("R201", "三流不一致", False, "高", "资金流水缺少收付方向", "")
+        return _rule("R201", "三流不一致", False, "中", "资金流水缺少收付方向", "")
     income_by_contract = {}
     expense_by_contract = {}
     for _, f in fund_flows.iterrows():
@@ -218,40 +218,40 @@ def check_r06(invoices, fund_flows, contracts):
             mismatches.append(f"发票方[{inv_party}]≠合同方[{contract_party[cno]}]({cno})")
     if mismatches:
         return _rule(
-            "R201", "三流不一致", True, "高",
+            "R201", "三流不一致", True, "中",
             "；".join(mismatches[:5]) + (f"；个人账户收款 {len(personal)} 笔" if personal else ""),
             "逐笔核对合同、发票、资金流三流对应关系；三流不一致是虚开/偷税核查重点。",
         )
     if personal:
         return _rule(
-            "R201", "三流不一致", True, "高",
+            "R201", "三流不一致", True, "中",
             f"对公业务通过个人账户收付（合同号：{'、'.join(personal[:5])}）",
             "逐笔核对合同、发票、资金流三流对应关系；个人账户收付对公货款是隐匿收入/资金回流常见通道。",
         )
-    return _rule("R201", "三流不一致", False, "高", "发票、资金、合同三流一致", "")
+    return _rule("R201", "三流不一致", False, "中", "发票、资金、合同三流一致", "")
 
 
 def check_r07(fund_flows):
     """R202 个人账户收付款占比高：对公业务通过个人账户收付款金额占比>10%。"""
     if fund_flows.empty or "账户类型" not in fund_flows.columns:
-        return _rule("R202", "个人账户收付款占比高", False, "高", "无资金流水数据", "")
+        return _rule("R202", "个人账户收付款占比高", False, "中", "无资金流水数据", "")
     flows = fund_flows.copy()
     flows["金额(元)"] = flows["金额(元)"].apply(_num)
     total = flows["金额(元)"].sum()
     personal = flows[flows["账户类型"] == "个人账户"]["金额(元)"].sum()
     if total and personal / total > 0.1:
         return _rule(
-            "R202", "个人账户收付款占比高", True, "高",
+            "R202", "个人账户收付款占比高", True, "中",
             f"个人账户收付款 {personal:,.0f} 元，占总流水 {personal/total*100:.1f}%（阈值10%）",
             "核实个人账户资金对应的真实业务：公私混用、隐匿收入或账外资金回流。",
         )
-    return _rule("R202", "个人账户收付款占比高", False, "高", f"个人账户占比 {_pct(personal, total) or 0:.1f}%（阈值10%）", "")
+    return _rule("R202", "个人账户收付款占比高", False, "中", f"个人账户占比 {_pct(personal, total) or 0:.1f}%（阈值10%）", "")
 
 
 def check_r203(fund_flows):
     """R203 资金回流：收入后短期内向同一对方支出，或备注含回流/转回。"""
     if fund_flows.empty or "收付方向" not in fund_flows.columns:
-        return _rule("R203", "资金回流", False, "高", "无资金流水数据", "")
+        return _rule("R203", "资金回流", False, "中", "无资金流水数据", "")
     flows = fund_flows.copy()
     flows["金额(元)"] = flows["金额(元)"].apply(_num)
     flows["日期"] = pd.to_datetime(flows["流水日期"], errors="coerce")
@@ -269,30 +269,30 @@ def check_r203(fund_flows):
         if not window.empty:
             e = window.iloc[0]
             return _rule(
-                "R203", "资金回流", True, "高",
+                "R203", "资金回流", True, "中",
                 f"收入 {inc['金额(元)']:,.0f} 元后 {int((e['日期'] - inc['日期']).days)} 天内"
                 f"向同一对方支出 {e['金额(元)']:,.0f} 元，疑似资金回流",
                 "资金回流是虚开与隐匿收入的直接证据：核查回流资金对应的业务实质、合同与交付物。",
             )
     if flows["备注"].astype(str).str.contains("回流|转回", na=False).any():
         return _rule(
-            "R203", "资金回流", True, "高",
+            "R203", "资金回流", True, "中",
             "资金流水备注含'回流/转回'字样",
             "核查回流资金对应的业务实质，是否构成资金回流闭环。",
         )
-    return _rule("R203", "资金回流", False, "高", "未发现资金回流", "")
+    return _rule("R203", "资金回流", False, "中", "未发现资金回流", "")
 
 
 def check_r09(invoices):
     """R301 风险企业传导：上游/下游存在非正常户、走逃失联。"""
     if invoices.empty or "对方状态" not in invoices.columns:
-        return _rule("R301", "风险企业传导", False, "高", "无发票数据", "")
+        return _rule("R301", "风险企业传导", False, "中", "无发票数据", "")
     bad = invoices[invoices["对方状态"].isin(ABNORMAL_STATUS)]
     if bad.empty:
-        return _rule("R301", "风险企业传导", False, "高", "无异常状态上下游企业", "")
+        return _rule("R301", "风险企业传导", False, "中", "无异常状态上下游企业", "")
     names = "、".join(str(x) for x in bad["对方名称"].dropna().unique()[:5])
     return _rule(
-        "R301", "风险企业传导", True, "高",
+        "R301", "风险企业传导", True, "中",
         f"存在{len(bad)}张异常状态发票，对方：{names}",
         "异常凭证处理路径：未抵扣的暂不允许抵扣，已抵扣的先作进项转出；"
         "A级信用纳税人可在10个工作日内申请核实，核实通过可不转出。",
@@ -314,7 +314,7 @@ def check_r12(invoices, profile):
     industry = str(profile.get("行业", ""))
     lower = INDUSTRY_VAT_LOWER.get(industry, 1.0)
     if burden < lower:
-        level = "高" if burden < lower / 2 else "中"
+        level = "中"
         return _rule(
             "R401", "增值税税负率异常", True, level,
             f"增值税税负率 {burden:.1f}%，行业[{industry}]参考下限 {lower}%（演示值）",
@@ -328,18 +328,18 @@ def check_r15(profile):
     declare = _num(profile.get("个税申报人数"))
     social = _num(profile.get("社保参保人数"))
     if declare is None or social is None:
-        return _rule("R501", "个税与社保人数不一致", False, "中", "个税或社保人数缺失", "")
+        return _rule("R501", "个税与社保人数不一致", False, "低", "个税或社保人数缺失", "")
     if declare <= 0:
-        return _rule("R501", "个税与社保人数不一致", False, "中", "个税申报人数为0", "")
+        return _rule("R501", "个税与社保人数不一致", False, "低", "个税申报人数为0", "")
     diff = abs(declare - social) / declare * 100
     if diff > 20:
-        level = "高" if diff > 50 else "中"
+        level = "低"
         return _rule(
             "R501", "个税与社保人数不一致", True, level,
             f"个税申报 {declare:.0f} 人 vs 社保参保 {social:.0f} 人，差异 {diff:.0f}%",
             "核实用工形式（临时工/劳务外包/未参保人员），防范未足额参保、隐匿用工。",
         )
-    return _rule("R501", "个税与社保人数不一致", False, "中", f"人数差异 {diff:.0f}%（阈值20%）", "")
+    return _rule("R501", "个税与社保人数不一致", False, "低", f"人数差异 {diff:.0f}%（阈值20%）", "")
 
 
 def check_r16(profile):
@@ -347,11 +347,11 @@ def check_r16(profile):
     level = str(profile.get("纳税信用等级", "")).strip().upper()
     if level == "D":
         return _rule(
-            "R502", "纳税信用等级低", True, "高",
+            "R502", "纳税信用等级低", True, "中",
             "纳税信用等级为 D 级",
             "D级纳税人将受到发票领用、出口退税、融资授信等限制；核查失信原因并整改。",
         )
-    return _rule("R502", "纳税信用等级低", False, "高", f"纳税信用等级 {level or '未知'}", "")
+    return _rule("R502", "纳税信用等级低", False, "中", f"纳税信用等级 {level or '未知'}", "")
 
 
 def check_r17(profile):
@@ -384,7 +384,7 @@ def check_r18(profile):
         return _rule("R402", "利润与申报应纳税所得额差异过大", False, "中", "利润总额或应纳税所得额缺失", "")
     diff = abs(profit - taxable) / abs(taxable) * 100
     if diff > 50:
-        level = "高" if diff > 100 else "中"
+        level = "中"
         return _rule(
             "R402", "利润与申报应纳税所得额差异过大", True, level,
             f"会计利润 {profit:.1f}万 vs 申报应纳税所得额 {taxable:.1f}万，差异率 {diff:.0f}%",
@@ -463,7 +463,7 @@ def check_r21(profile):
         return _rule("R801", "单站销售横向偏离", False, "中", "区域参考销量为0", "")
     diff = (reported - reference) / reference * 100
     if abs(diff) > 50:
-        level = "高" if abs(diff) > 100 else "中"
+        level = "中"
         return _rule(
             "R801", "单站销售横向偏离", True, level,
             f"申报销量 {reported:.0f}吨 vs 区域参考 {reference:.0f}吨，偏离 {diff:.0f}%",
@@ -521,14 +521,14 @@ def check_r24(profile):
     """R901 集群注册同址：同一地址关联企业/个体户>=5户。"""
     count = _num(profile.get("关联户数"))
     if count is None:
-        return _rule("R901", "集群注册同址", False, "高", "关联户数缺失", "")
+        return _rule("R901", "集群注册同址", False, "低", "关联户数缺失", "")
     if count >= 5:
         return _rule(
-            "R901", "集群注册同址", True, "高",
+            "R901", "集群注册同址", True, "低",
             f"同一注册地址关联 {count:.0f} 户企业/个体户",
             "单户看都合法、跨户汇总才暴露拆分：按关联户/关联人组织核查。",
         )
-    return _rule("R901", "集群注册同址", False, "高", f"关联户数 {count:.0f}（阈值5户）", "")
+    return _rule("R901", "集群注册同址", False, "低", f"关联户数 {count:.0f}（阈值5户）", "")
 
 
 def check_r903(profile):
@@ -581,17 +581,17 @@ def check_r31(profile, invoices):
     missing_rate = _fuel_num(profile, "液位仪月缺失率(%)")
     if assets is None:
         return _rule(
-            "R701", "数据完整性异常", True, "高",
+            "R701", "数据完整性异常", True, "中",
             "企业指标中资产总额缺失",
             "不猜测、不补数：标注'需补充后判断'；数据缺失本身就是风险信号。",
         )
     if missing_rate is not None and missing_rate > 5:
         return _rule(
-            "R701", "数据完整性异常", True, "高",
+            "R701", "数据完整性异常", True, "中",
             f"液位仪月记录缺失率 {missing_rate:.0f}%（阈值5%）",
             "检查记录空缺断点/删除痕迹/留存周期；用供应商进油单等外部单据交叉验证。",
         )
-    return _rule("R701", "数据完整性异常", False, "高", "关键数据完整", "")
+    return _rule("R701", "数据完整性异常", False, "中", "关键数据完整", "")
 
 
 def check_r32(profile):
@@ -600,7 +600,7 @@ def check_r32(profile):
     if ratio is None:
         return _rule("R702", "上游发票缺失", False, "中", "无票采购占比缺失", "")
     if ratio > 30:
-        level = "高" if ratio > 60 else "中"
+        level = "中"
         return _rule(
             "R702", "上游发票缺失", True, level,
             f"无票采购占比 {ratio:.0f}%（演示阈值30%）",
@@ -680,7 +680,7 @@ def check_r35(profile):
         return _rule("R604", "收入与应税所得严重不匹配", False, "中", "收入或应税所得缺失", "")
     ratio = taxable / revenue * 100
     if revenue > 5000 and ratio < 3:
-        level = "高" if ratio < 1.5 else "中"
+        level = "中"
         return _rule(
             "R604", "收入与应税所得严重不匹配", True, level,
             f"营业收入 {revenue:,.0f}万，应税所得 {taxable:,.1f}万，收入利润率 {ratio:.1f}%（阈值3%）",
@@ -792,11 +792,11 @@ COMBO_RULES = {
     },
     "G002": {
         "name": "拆分享受优惠联动",
-        "level": "高",
+        "level": "中",
         "depends_on": ["R901", "R903"],
         "label": "R901 集群注册同址 + R903 关联户贴线",
         "check": _make_combo_check(
-            "G002", "拆分享受优惠联动", "高", ["R901", "R903"], 2,
+            "G002", "拆分享受优惠联动", "中", ["R901", "R903"], 2,
             "同一控制人关联多户且多户贴线，涉嫌人为拆分享受优惠：核查各户业务实质与独立性。",
         ),
     },
@@ -834,17 +834,17 @@ COMBO_RULES = {
 
 # 规则注册表（未排序），执行顺序按分类分组、组内按编号
 _RULES = [
-    ("R101", "顶额开票", "高", check_r01),
-    ("R102", "月末集中开票", "中", check_r02),
+    ("R101", "顶额开票", "低", check_r01),
+    ("R102", "月末集中开票", "低", check_r02),
     ("R103", "红冲/作废率过高", "中", check_r03),
     ("R104", "进销项品名不匹配", "高", check_r04),
-    ("R201", "三流不一致", "高", check_r06),
-    ("R202", "个人账户收付款占比高", "高", check_r07),
-    ("R203", "资金回流", "高", check_r203),
-    ("R301", "风险企业传导", "高", check_r09),
+    ("R201", "三流不一致", "中", check_r06),
+    ("R202", "个人账户收付款占比高", "中", check_r07),
+    ("R203", "资金回流", "中", check_r203),
+    ("R301", "风险企业传导", "中", check_r09),
     ("R401", "增值税税负率异常", "中", check_r12),
-    ("R501", "个税与社保人数不一致", "中", check_r15),
-    ("R502", "纳税信用等级低", "高", check_r16),
+    ("R501", "个税与社保人数不一致", "低", check_r15),
+    ("R502", "纳税信用等级低", "中", check_r16),
     ("R601", "小微临界", "低", check_r17),
     ("R402", "利润与申报应纳税所得额差异过大", "中", check_r18),
     ("R603", "研发加计扣除占比异常", "中", check_r20),
@@ -852,13 +852,13 @@ _RULES = [
     ("R801", "单站销售横向偏离", "中", check_r21),
     ("R802", "多源数据不一致", "高", check_r22),
     ("R803", "申报单价偏离区域均价", "中", check_r23),
-    ("R901", "集群注册同址", "高", check_r24),
+    ("R901", "集群注册同址", "低", check_r24),
     ("R902", "单一服务类品目集中", "中", check_r27),
     ("R903", "关联户贴线", "中", check_r903),
     ("R605", "资格-优惠不匹配", "高", check_r30),
-    ("R701", "数据完整性异常", "高", check_r31),
+    ("R701", "数据完整性异常", "中", check_r31),
     ("R702", "上游发票缺失", "中", check_r32),
-    ("R703", "上游单据与本地记录不一致", "高", check_r33),
+    ("R703", "外部单据与本地记录不一致", "高", check_r33),
     ("R704", "数据源可信度", "中", check_r34),
     ("R604", "收入与应税所得严重不匹配", "中", check_r35),
     ("R804", "收购发票对象身份存疑", "高", check_r36),

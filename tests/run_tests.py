@@ -77,7 +77,7 @@ def test_01_tax_burden_low():
         ("JJ1", "2026-07-02", "进项发票", "技术服务", 6, 9500000, 570000, "乙", "", "正常", "", ""),
     ])
     r = rule(rules.run_all(p, inv, funds([]), contracts([])), "R401")
-    assert r["hit"] and r["level"] == "高", f"预期高，实际 {r}"
+    assert r["hit"] and r["level"] == "中", f"预期中，实际 {r}"
 
 
 def test_02_input_output_mismatch():
@@ -96,7 +96,7 @@ def test_03_top_up_invoices():
         ("XS3", "2026-07-28", "销项发票", "软件服务", 6, 99990, 5999.4, "丙", "", "正常", "", ""),
     ])
     r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, funds([]), contracts([])), "R101")
-    assert r["hit"] and r["level"] == "高", r
+    assert r["hit"] and r["level"] == "低", r
 
 
 def test_04_three_flows_mismatch():
@@ -108,7 +108,7 @@ def test_04_three_flows_mismatch():
     ])
     c = contracts([("HT-G001", "甲方", 1000000, "2026-06-01")])
     r = rule(rules.run_all(profile({"资产总额(万元)": 100}), inv, f, c), "R201")
-    assert r["hit"] and r["level"] == "高", r
+    assert r["hit"] and r["level"] == "中", r
 
 
 def test_05_headcount_social_mismatch():
@@ -664,7 +664,7 @@ def test_39_risk_policy_link_general():
 
 
 def main():
-    case(1, "税负率明显低于行业参考区间 → R401 高", test_01_tax_burden_low)
+    case(1, "税负率明显低于行业参考区间 → R401 中", test_01_tax_burden_low)
     case(2, "销项软件、进项全餐饮 → R104", test_02_input_output_mismatch)
     case(3, "连续3张接近顶额 → R101", test_03_top_up_invoices)
     case(4, "发票与资金付款方不一致 → R201", test_04_three_flows_mismatch)
