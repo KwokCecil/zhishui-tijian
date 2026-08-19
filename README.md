@@ -9,7 +9,7 @@
 ```bash
 pip install -r requirements.txt
 
-# 1. 生成演示数据（clean/risk/fuel/case1/case6 五个场景）
+# 1. 生成演示数据（clean/risk/fuel/solar/lotus 五个场景）
 python generate_data.py --all
 
 # 2. 运行验收测试（25 条）
@@ -49,7 +49,7 @@ LLM 只负责理解意图、决定调用哪个工具、把事实组织成回答�
 | match_policy_cards | profile | 优惠政策清单（可享受/需确认/不适用，带文号） |
 | check_small_micro | profile | 小微四项条件逐项判定 |
 | answer_policy_question | query | 未收录政策的统一拒绝（引导 12366） |
-| get_demo_scenario | clean/risk/fuel/case1/case6 | 内置场景四类数据 JSON |
+| get_demo_scenario | clean/risk/fuel/solar/lotus | 内置场景四类数据 JSON |
 | generate_report | hits + summary + matched | Markdown 体检报告 |
 
 两种运行模式：
@@ -83,8 +83,8 @@ set ZHI_SHUI_LLM_MODEL=deepseek-chat
 | clean | 全正常数据，应输出低风险画像 |
 | risk | 软件企业混合风险种子（税负率低/三流不一致/个税社保差异/上游走逃/顶额开票/红冲偏高/小微临界等） |
 | fuel | 加油站模板（以进控销 + 三源比对 + 设备信任梯度） |
-| case1 | 光伏设备制造企业：约120人、资产未临界、收入上亿、应税所得 292.7 万（距300万仅7.3万）、研发加计 600 万（小微临界预警链） |
-| case6 | 农产品收购发票：收购对象身份存疑 + 单户金额异常 + 业务流不匹配 |
+| solar | 光伏设备制造企业：约120人、资产未临界、收入上亿、应税所得 292.7 万（距300万仅7.3万）、研发加计 600 万（小微临界预警链） |
+| lotus | 农产品收购发票：收购对象身份存疑 + 单户金额异常 + 业务流不匹配 |
 
 页面顶部会显示当前场景的**企业画像、风险种子、预期结论**，跑完自动给出
 “关键结论”横幅（最高关注特征 + 等级）和四项指标卡。

@@ -209,8 +209,8 @@ def test_15_report_traceable():
         assert h["rule_id"] and h["evidence"] and h["suggestion"], h
 
 
-def test_16_case1_similar_case_and_docs():
-    data = generate_data.build_scenario("case1")
+def test_16_solar_similar_case_and_docs():
+    data = generate_data.build_scenario("solar")
     hits = hits_of(data)
     r17 = rule(hits, "R601")
     r35 = rule(hits, "R604")
@@ -259,8 +259,8 @@ def test_22_device_chip_risk():
     assert r["hit"] and "降级" in r["evidence"], r
 
 
-def test_23_case1_full_warning_chain():
-    data = generate_data.build_scenario("case1")
+def test_23_solar_full_warning_chain():
+    data = generate_data.build_scenario("solar")
     hits = hits_of(data)
     for rid in ("R601", "G001", "R604"):
         rule(hits, rid)
@@ -269,7 +269,7 @@ def test_23_case1_full_warning_chain():
 
 
 def test_24_agricultural_purchase_risk():
-    data = generate_data.build_scenario("case6")
+    data = generate_data.build_scenario("lotus")
     hits = hits_of(data)
     r36 = rule(hits, "R804")
     r37 = rule(hits, "R805")
@@ -310,7 +310,7 @@ def test_27_health_check_tool():
 
 
 def test_28_policy_tool():
-    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "solar"})
     r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
     assert len(r) == 8, r
     assert all(m["doc_number"] for m in r), r
@@ -319,7 +319,7 @@ def test_28_policy_tool():
 
 
 def test_29_small_micro_tool():
-    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "solar"})
     r = tools.execute_tool("check_small_micro", {"profile": scenario["company_profile"]})
     assert r["qualified"] is True, r
 
@@ -335,7 +335,7 @@ def test_31_scenario_tool_unknown():
 
 
 def test_32_report_tool_offline():
-    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "solar"})
     health = tools.execute_tool("run_tax_health_check", {
         "profile": scenario["company_profile"],
         "invoices": scenario["invoices"],
@@ -357,16 +357,16 @@ def test_33_offline_agent_loop():
     assert r1["mode"] == "offline" and r1["trace"], r1
     assert "体检得分" in r1["answer"] or "等级" in r1["answer"], r1
 
-    r2 = agent.run_agent("能享受哪些优惠政策？", scenario="case1")
+    r2 = agent.run_agent("能享受哪些优惠政策？", scenario="solar")
     assert any(t["tool"] == "match_policy_cards" for t in r2["trace"]), r2
     assert "政策" in r2["answer"], r2
 
-    r3 = agent.run_agent("这家公司符合小型微利企业条件吗？", scenario="case1")
+    r3 = agent.run_agent("这家公司符合小型微利企业条件吗？", scenario="solar")
     assert any(t["tool"] == "check_small_micro" for t in r3["trace"]), r3
 
 
-def test_34_case1_level_high():
-    data = generate_data.build_scenario("case1")
+def test_34_solar_level_high():
+    data = generate_data.build_scenario("solar")
     p = data["company_profile"].iloc[0]
     assert p["个税申报人数"] == 120, p["个税申报人数"]
     assert p["资产总额(万元)"] == 3200, p["资产总额(万元)"]
@@ -384,15 +384,15 @@ def test_34_case1_level_high():
     assert r604.get("merged_into") is None, r604
 
 
-def test_35_case6_level_high():
-    data = generate_data.build_scenario("case6")
+def test_35_lotus_level_high():
+    data = generate_data.build_scenario("lotus")
     hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
     summary = scoring.risk_summary(hits)
     assert summary["level"] == "高风险", summary
 
 
 def test_36_policy_detail_clarity():
-    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "solar"})
     r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
     by_id = {m["policy_id"]: m for m in r}
 
@@ -411,7 +411,7 @@ def test_36_policy_detail_clarity():
 
 
 def test_37_policy_exclusivity():
-    scenario = tools.execute_tool("get_demo_scenario", {"name": "case1"})
+    scenario = tools.execute_tool("get_demo_scenario", {"name": "solar"})
     r = tools.execute_tool("match_policy_cards", {"profile": scenario["company_profile"]})
     by_id = {m["policy_id"]: m for m in r}
     assert by_id["P101"]["exclusive_with"] == "P102", by_id["P101"]
@@ -420,7 +420,7 @@ def test_37_policy_exclusivity():
 
 
 def test_38_rule_hierarchy_merge():
-    data = generate_data.build_scenario("case1")
+    data = generate_data.build_scenario("solar")
     hits = rules.run_all(data["company_profile"], data["invoices"], data["fund_flows"], data["contracts"])
     summary = scoring.risk_summary(hits)
     assert summary["hit_count"] == 2, summary  # G001（含 R601/R602）+ R604
@@ -466,8 +466,8 @@ def test_43_rule_metadata_category_order():
         < order.index("R601") < order.index("R701") < order.index("R801") < order.index("R901")
     ), order
 
-    case1 = generate_data.build_scenario("case1")
-    hits = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
+    solar = generate_data.build_scenario("solar")
+    hits = rules.run_all(solar["company_profile"], solar["invoices"], solar["fund_flows"], solar["contracts"])
     r19 = rule(hits, "G001")
     assert r19.get("kind") == "combo", r19
     assert r19.get("depends_on") == ["R601", "R602"], r19
@@ -522,8 +522,8 @@ def test_46_gov_source_still_tamperable():
 
 
 def test_47_combos_applied_to_scenarios():
-    case1 = generate_data.build_scenario("case1")
-    hits1 = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
+    solar = generate_data.build_scenario("solar")
+    hits1 = rules.run_all(solar["company_profile"], solar["invoices"], solar["fund_flows"], solar["contracts"])
     ids1 = {h["rule_id"] for h in hits1}
     assert "G001" in ids1 and not (ids1 & {"G002", "G003", "G004", "G005"}), ids1
 
@@ -546,8 +546,8 @@ def test_47_combos_applied_to_scenarios():
     assert rule(hits_f, "R701")["merged_into"] == "G005", rule(hits_f, "R701")
     assert rule(hits_f, "R704")["merged_into"] == "G005", rule(hits_f, "R704")
 
-    case6 = generate_data.build_scenario("case6")
-    hits6 = rules.run_all(case6["company_profile"], case6["invoices"], case6["fund_flows"], case6["contracts"])
+    lotus = generate_data.build_scenario("lotus")
+    hits6 = rules.run_all(lotus["company_profile"], lotus["invoices"], lotus["fund_flows"], lotus["contracts"])
     ids6 = {h["rule_id"] for h in hits6}
     assert "G004" in ids6, ids6
     assert rule(hits6, "R804")["merged_into"] == "G004", rule(hits6, "R804")
@@ -570,9 +570,9 @@ def test_46_gov_source_still_tamperable():
 
 
 def test_39_risk_policy_link_general():
-    case1 = generate_data.build_scenario("case1")
-    hits1 = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
-    matched1 = policies.match_cards(case1["company_profile"])
+    solar = generate_data.build_scenario("solar")
+    hits1 = rules.run_all(solar["company_profile"], solar["invoices"], solar["fund_flows"], solar["contracts"])
+    matched1 = policies.match_cards(solar["company_profile"])
     w1 = policies.linked_warnings(hits1, matched1)
     pids1 = {w["policy_id"] for w in w1}
     assert {"P101", "P301"} <= pids1, w1
@@ -590,15 +590,15 @@ def test_39_risk_policy_link_general():
     matched_f = policies.match_cards(fuel["company_profile"])
     assert policies.linked_warnings(hits_f, matched_f) == [], policies.linked_warnings(hits_f, matched_f)
 
-    case6 = generate_data.build_scenario("case6")
-    hits6 = rules.run_all(case6["company_profile"], case6["invoices"], case6["fund_flows"], case6["contracts"])
-    matched6 = policies.match_cards(case6["company_profile"])
+    lotus = generate_data.build_scenario("lotus")
+    hits6 = rules.run_all(lotus["company_profile"], lotus["invoices"], lotus["fund_flows"], lotus["contracts"])
+    matched6 = policies.match_cards(lotus["company_profile"])
     assert policies.linked_warnings(hits6, matched6) == [], policies.linked_warnings(hits6, matched6)
 
 
 def test_40_policy_status_no_false_usable():
-    case1 = generate_data.build_scenario("case1")
-    matched1 = policies.match_cards(case1["company_profile"])
+    solar = generate_data.build_scenario("solar")
+    matched1 = policies.match_cards(solar["company_profile"])
     by_id = {m["policy_id"]: m for m in matched1}
     # 软件即征即退：制造业 + 非自研软件 → 明确不满足，不应出现在可关注里
     assert by_id["P203"]["status"] == "不适用", by_id["P203"]
@@ -615,14 +615,14 @@ def test_40_policy_status_no_false_usable():
     assert p08_small["conditions"][0]["pass"] is True, p08_small
 
     # 一般纳税人且不符合小微 → 六税两费不适用
-    case6 = generate_data.build_scenario("case6")
-    p08_case6 = {m["policy_id"]: m for m in policies.match_cards(case6["company_profile"])}["P301"]
-    assert p08_case6["status"] == "不适用", p08_case6
+    lotus = generate_data.build_scenario("lotus")
+    p08_lotus = {m["policy_id"]: m for m in policies.match_cards(lotus["company_profile"])}["P301"]
+    assert p08_lotus["status"] == "不适用", p08_lotus
 
 
 def test_41_restriction_card_semantics():
-    case1 = generate_data.build_scenario("case1")
-    p04 = {m["policy_id"]: m for m in policies.match_cards(case1["company_profile"])}["P104"]
+    solar = generate_data.build_scenario("solar")
+    p04 = {m["policy_id"]: m for m in policies.match_cards(solar["company_profile"])}["P104"]
     assert p04["status"] == "未触发限制", p04
     assert "负面清单" in p04["note"] and "限制" in p04["note"], p04
 
@@ -637,9 +637,9 @@ def test_41_restriction_card_semantics():
 
 
 def test_39_risk_policy_link_general():
-    case1 = generate_data.build_scenario("case1")
-    hits1 = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
-    matched1 = policies.match_cards(case1["company_profile"])
+    solar = generate_data.build_scenario("solar")
+    hits1 = rules.run_all(solar["company_profile"], solar["invoices"], solar["fund_flows"], solar["contracts"])
+    matched1 = policies.match_cards(solar["company_profile"])
     w1 = policies.linked_warnings(hits1, matched1)
     pids1 = {w["policy_id"] for w in w1}
     assert {"P101", "P301"} <= pids1, w1
@@ -657,9 +657,9 @@ def test_39_risk_policy_link_general():
     matched_f = policies.match_cards(fuel["company_profile"])
     assert policies.linked_warnings(hits_f, matched_f) == [], policies.linked_warnings(hits_f, matched_f)
 
-    case6 = generate_data.build_scenario("case6")
-    hits6 = rules.run_all(case6["company_profile"], case6["invoices"], case6["fund_flows"], case6["contracts"])
-    matched6 = policies.match_cards(case6["company_profile"])
+    lotus = generate_data.build_scenario("lotus")
+    hits6 = rules.run_all(lotus["company_profile"], lotus["invoices"], lotus["fund_flows"], lotus["contracts"])
+    matched6 = policies.match_cards(lotus["company_profile"])
     assert policies.linked_warnings(hits6, matched6) == [], policies.linked_warnings(hits6, matched6)
 
 
@@ -679,14 +679,14 @@ def main():
     case(13, "资产总额缺失 → 不猜，标注需补充", test_13_missing_data_no_guess)
     case(14, "风险指数边界（0/30/60/70/100）→ 等级一致", test_14_score_boundaries)
     case(15, "报告逐条可溯源（ID+证据+建议）", test_15_report_traceable)
-    case(16, "案例一命中 → 展示相似案例+备查资料", test_16_case1_similar_case_and_docs)
+    case(16, "案例一命中 → 展示相似案例+备查资料", test_16_solar_similar_case_and_docs)
     case(17, "加油站模板 → R802 三源不一致+以进控销", test_17_fuel_three_source)
     case(18, "团伙特征（同址+咨询费集中）→ R901+R902", test_18_gang_cluster_features)
     case(19, "非高企享受加计抵减 → R605 复核清单", test_19_qualification_deduction_mismatch)
     case(20, "液位仪缺失率12% → R701", test_20_fuel_data_gap)
     case(21, "上游进油单存在但本地记录缺失 → R703", test_21_upstream_docs_vs_local)
     case(22, "旧标准芯片 → R704 数据降级", test_22_device_chip_risk)
-    case(23, "案例一预警链（R601/G001/R604+降负政策包）", test_23_case1_full_warning_chain)
+    case(23, "案例一预警链（R601/G001/R604+降负政策包）", test_23_solar_full_warning_chain)
     case(24, "收购对象身份存疑+单户巨大 → R804+R805+代开路径", test_24_agricultural_purchase_risk)
     case(25, "上游走逃 → 异常凭证处理路径提示", test_25_abnormal_invoice_path)
     case(26, "工具层 schema 完整（名称/描述/参数）", test_26_tool_schemas_valid)
@@ -697,8 +697,8 @@ def main():
     case(31, "get_demo_scenario 未知场景返回错误", test_31_scenario_tool_unknown)
     case(32, "generate_report 离线报告含风险指数", test_32_report_tool_offline)
     case(33, "离线 Agent 对话循环（风险/政策/小微）", test_33_offline_agent_loop)
-    case(34, "案例一等级：高风险（两条中危触发）", test_34_case1_level_high)
-    case(35, "案例六等级：高风险（高危+中危）", test_35_case6_level_high)
+    case(34, "案例一等级：高风险（两条中危触发）", test_34_solar_level_high)
+    case(35, "案例六等级：高风险（高危+中危）", test_35_lotus_level_high)
     case(36, "政策明细清晰（P101数值/P102全满足/P301下一步）", test_36_policy_detail_clarity)
     case(37, "P101/P102 互斥择优（二选一）", test_37_policy_exclusivity)
     case(38, "G001 合并 R601/R602 不重复计分", test_38_rule_hierarchy_merge)
@@ -710,7 +710,7 @@ def main():
     case(44, "外部单据比对 + 数据源可信度（fuel 场景）", test_44_external_docs_and_source_credibility)
     case(45, "数据源可信度两步判定（内部自洽≠真实）", test_45_source_credibility_two_step)
     case(46, "监管机构来源但可篡改 → 仍不可信", test_46_gov_source_still_tamperable)
-    case(47, "G002-G005 落地到场景（risk/fuel/case6）", test_47_combos_applied_to_scenarios)
+    case(47, "G002-G005 落地到场景（risk/fuel/lotus）", test_47_combos_applied_to_scenarios)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

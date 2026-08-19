@@ -174,13 +174,13 @@ def answer_policy_question(query):
 @tool(
     "get_demo_scenario",
     "获取内置演示场景的四类模拟数据（JSON）。场景：clean 全正常、risk 混合风险、"
-    "fuel 加油站模板、case1 小微临界预警链、case6 农产品收购发票。返回数据可直接传给 run_tax_health_check。",
+    "fuel 加油站模板、solar 小微临界预警链、lotus 农产品收购发票。返回数据可直接传给 run_tax_health_check。",
     {
         "type": "object",
         "properties": {
             "name": {
                 "type": "string",
-                "enum": ["clean", "risk", "fuel", "case1", "case6"],
+                "enum": ["clean", "risk", "fuel", "solar", "lotus"],
                 "description": "场景名",
             },
         },

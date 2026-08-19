@@ -222,7 +222,7 @@ def scenario_fuel():
     }
 
 
-def scenario_case1():
+def scenario_solar():
     """案例一：光伏产业链硅原料清洗设备企业——收入上亿、应税所得292.7万、研发加计600万。"""
     profile = _profile({
         "企业ID": "M001", "行业": "制造业", "纳税人类型": "一般纳税人",
@@ -261,7 +261,7 @@ def scenario_case1():
     }
 
 
-def scenario_case6():
+def scenario_lotus():
     """案例六：农产品收购发票——收购对象身份存疑 + 单户金额异常 + 业务流不匹配。"""
     profile = _profile({
         "企业ID": "A001", "行业": "农副产品加工", "纳税人类型": "一般纳税人",
@@ -305,8 +305,8 @@ SCENARIOS = {
     "clean": scenario_clean,
     "risk": scenario_risk,
     "fuel": scenario_fuel,
-    "case1": scenario_case1,
-    "case6": scenario_case6,
+    "solar": scenario_solar,
+    "lotus": scenario_lotus,
 }
 
 
