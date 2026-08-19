@@ -55,13 +55,14 @@ def complete(prompt, system="你是严谨的税务数字化产品专家。", tem
     return data["choices"][0]["message"]["content"]
 
 
-def chat_with_tools(messages, tools, max_turns=6):
+def chat_with_tools(messages, tools, max_turns=8):
     """多轮 function calling 循环：模型决定调用工具→执行→回填→继续，直到给出最终回答。"""
     cfg = config()
     if not cfg["api_key"]:
         raise LLMError("未配置 ZHI_SHUI_LLM_API_KEY")
     trace = []
     payload_messages = list(messages)
+    executed = {}
     for _ in range(max_turns):
         body = {
             "model": cfg["model"],
@@ -88,12 +89,18 @@ def chat_with_tools(messages, tools, max_turns=6):
             return message.get("content") or "", trace
         for call in tool_calls:
             fn = call["function"]
-            try:
-                result = _run_tool(fn["name"], fn.get("arguments", "{}"))
+            key = (fn["name"], fn.get("arguments", "{}"))
+            if key in executed:
+                result = {"note": "该工具已调用过，结果不变", **executed[key]}
                 ok = True
-            except Exception as exc:  # noqa: BLE001
-                result = {"error": f"{type(exc).__name__}: {exc}"}
-                ok = False
+            else:
+                try:
+                    result = _run_tool(fn["name"], fn.get("arguments", "{}"))
+                    executed[key] = result
+                    ok = True
+                except Exception as exc:  # noqa: BLE001
+                    result = {"error": f"{type(exc).__name__}: {exc}"}
+                    ok = False
             trace.append({
                 "tool": fn["name"],
                 "arguments": fn.get("arguments", "{}"),
@@ -105,7 +112,28 @@ def chat_with_tools(messages, tools, max_turns=6):
                 "tool_call_id": call["id"],
                 "content": json.dumps(result, ensure_ascii=False),
             })
-    raise LLMError(f"工具调用超过 {max_turns} 轮仍未结束")
+    # 轮数用尽：禁止再调工具，强制模型基于已有结果直接作答
+    final_body = {
+        "model": cfg["model"],
+        "messages": payload_messages + [
+            {"role": "user", "content": "请直接根据已有工具结果给出最终回答，不要再调用任何工具。"}
+        ],
+        "tool_choice": "none",
+        "temperature": 0.2,
+        "max_tokens": 800,
+    }
+    resp = requests.post(
+        f"{cfg['base_url']}/chat/completions",
+        headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
+        json=final_body,
+        timeout=120,
+    )
+    if resp.status_code != 200:
+        raise LLMError(f"LLM 接口返回 {resp.status_code}: {resp.text[:300]}")
+    content = resp.json()["choices"][0]["message"].get("content") or ""
+    if not content.strip():
+        raise LLMError(f"工具调用超过 {max_turns} 轮，且强制收尾未返回内容")
+    return content.strip(), trace
 
 
 def _run_tool(name, arguments):
