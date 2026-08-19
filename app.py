@@ -93,7 +93,7 @@ SCENARIO_GUIDE = {
 
 def load_from_upload(uploaded_files):
     data = {}
-    for key in ("company_profile", "invoices", "fund_flows", "contracts"):
+    for key in ("company_profile", "invoices", "fund_flows", "contracts", "external_docs", "data_sources"):
         f = uploaded_files.get(key)
         if f is not None:
             data[key] = pd.read_csv(f, encoding="utf-8-sig")
@@ -167,12 +167,16 @@ with st.sidebar:
         up_invoices = st.file_uploader("发票明细 CSV", type="csv")
         up_funds = st.file_uploader("资金流水 CSV", type="csv")
         up_contracts = st.file_uploader("合同 CSV", type="csv")
+        up_external = st.file_uploader("外部单据 CSV（可选）", type="csv")
+        up_sources = st.file_uploader("数据源清单 CSV（可选）", type="csv")
         if st.button("开始体检", type="primary"):
             data = load_from_upload({
                 "company_profile": up_profile,
                 "invoices": up_invoices,
                 "fund_flows": up_funds,
                 "contracts": up_contracts,
+                "external_docs": up_external,
+                "data_sources": up_sources,
             })
 
 if mode == "内置演示场景" and scenario:
@@ -204,7 +208,10 @@ invoices = data.get("invoices", pd.DataFrame())
 fund_flows = data.get("fund_flows", pd.DataFrame())
 contracts = data.get("contracts", pd.DataFrame())
 
-hits = rules.run_all(profile, invoices, fund_flows, contracts)
+hits = rules.run_all(
+    profile, invoices, fund_flows, contracts,
+    data.get("external_docs"), data.get("data_sources"),
+)
 summary = scoring.risk_summary(hits)
 matched = policies.match_cards(profile)
 
@@ -354,6 +361,8 @@ if mode == "内置演示场景":
         "invoices": None,
         "fund_flows": None,
         "contracts": None,
+        "external_docs": None,
+        "data_sources": None,
     }
 else:
     agent_data = {
@@ -362,6 +371,8 @@ else:
         "invoices": tools._to_records(invoices) if not invoices.empty else [],
         "fund_flows": tools._to_records(fund_flows) if not fund_flows.empty else [],
         "contracts": tools._to_records(contracts) if not contracts.empty else [],
+        "external_docs": tools._to_records(data["external_docs"]) if "external_docs" in data and not data["external_docs"].empty else [],
+        "data_sources": tools._to_records(data["data_sources"]) if "data_sources" in data and not data["data_sources"].empty else [],
     }
 question = st.text_input("问它", placeholder="这家公司有什么风险？")
 if st.button("发送", type="primary"):
@@ -378,6 +389,8 @@ if st.button("发送", type="primary"):
                 invoices=agent_data["invoices"],
                 fund_flows=agent_data["fund_flows"],
                 contracts=agent_data["contracts"],
+                external_docs=agent_data["external_docs"],
+                data_sources=agent_data["data_sources"],
             )
         except Exception as exc:  # noqa: BLE001
             st.warning(f"在线模式失败：{exc}，已切换离线演示")
@@ -388,6 +401,8 @@ if st.button("发送", type="primary"):
                 invoices=agent_data["invoices"],
                 fund_flows=agent_data["fund_flows"],
                 contracts=agent_data["contracts"],
+                external_docs=agent_data["external_docs"],
+                data_sources=agent_data["data_sources"],
             )
         if result["trace"]:
             with st.expander(f"工具调用轨迹 {len(result['trace'])} 次 · {result['mode']}"):

@@ -33,6 +33,9 @@ SERVICE_ITEMS = ("咨询费", "服务费", "管理费")
 UNRELATED_INPUT_KEYWORDS = ("餐饮", "住宿", "娱乐", "礼品", "广告", "旅游")
 TECH_SALE_KEYWORDS = ("软件", "信息技术", "技术开发", "系统")
 
+EXTERNAL_DOC_COLS = ["单据号", "供应商", "品名", "数量", "单位", "金额(元)", "日期", "来源方"]
+DATA_SOURCE_COLS = ["数据源", "来源方", "可否篡改", "版本", "留存月数", "可信度"]
+
 
 def _num(value):
     """安全转 float，缺失/空返回 None。"""
@@ -556,29 +559,54 @@ def check_r32(profile):
     return _rule("R702", "上游发票缺失", False, "中", f"无票采购占比 {ratio:.0f}%（阈值30%）", "")
 
 
-def check_r33(profile):
-    """R703 上游单据与本地记录不一致（加油站模板）。"""
+def check_r33(profile, external_docs=None):
+    """R703 外部单据与本地记录不一致：第三方单据存在但本地记录缺失或对不上。"""
     doc = str(profile.get("上游进油单存在", ""))
     missing = str(profile.get("本地入库记录缺失", ""))
+    ext_count = 0
+    suppliers = ""
+    if external_docs is not None and not external_docs.empty:
+        ext_count = len(external_docs)
+        suppliers = "、".join(str(x) for x in external_docs["供应商"].dropna().unique()[:3])
+    if ext_count and missing == "是":
+        return _rule(
+            "R703", "外部单据与本地记录不一致", True, "高",
+            f"外部单据 {ext_count} 笔（{suppliers}）存在，本地入库/液位仪记录缺失",
+            "外部单据是戳穿数据删改的锚点：以进油单反推入库量，定性先行、定量后算。",
+        )
     if doc == "是" and missing == "是":
         return _rule(
-            "R703", "上游单据与本地记录不一致", True, "高",
+            "R703", "外部单据与本地记录不一致", True, "高",
             "供应商进油单存在，但本地入库/液位仪记录缺失",
             "外部单据是戳穿数据删改的锚点：以进油单反推入库量，定性先行、定量后算。",
         )
-    return _rule("R703", "上游单据与本地记录不一致", False, "高", "上游单据与本地记录匹配", "")
+    return _rule("R703", "外部单据与本地记录不一致", False, "高", "外部单据与本地记录匹配", "")
 
 
-def check_r34(profile):
-    """R704 设备版本风险（加油站模板）：旧标准芯片数据降级。"""
-    chip = str(profile.get("设备芯片标准", ""))
+def check_r34(profile, data_sources=None):
+    """R704 数据源可信度（两步判定）：
+    第一步比对一致性由 R802 等规则完成，不一致即提示风险；
+    第二步评估"一致"的可信度：同一方可修改来源的自洽不等于真实，
+    含监管机构或独立第三方来源参与才算可信。"""
+    chip = str(profile.get("加油机税控芯片标准", ""))
+    rows = []
+    if data_sources is not None and not data_sources.empty:
+        rows = data_sources.to_dict("records")
+    internal = [r for r in rows if str(r.get("来源方", "")) in ("企业自报", "企业内部", "设备")]
+    external = [r for r in rows if str(r.get("来源方", "")) in ("第三方", "监管机构")]
+    if internal and not external:
+        return _rule(
+            "R704", "数据源可信度", True, "中",
+            f"关键数据全部来自同一方可修改来源（{len(internal)} 个数据源），内部自洽不等于真实",
+            "需用监管机构或独立第三方来源交叉验证后，再对申报数据下结论。",
+        )
     if chip == "旧标准":
         return _rule(
-            "R704", "设备版本风险", True, "中",
-            "设备仍为可破解的旧标准芯片（无防篡改能力），数据可信度降级",
-            "旧芯片存在硬件漏洞（公安部2024-09典型案例、央视2025-01曝光）；新国标GB/T 9081-2023防篡改但未铺开——关键结论用外部数据交叉验证。",
+            "R704", "数据源可信度", True, "中",
+            "加油机税控芯片为旧标准，强制安装但可被破解，设备数据可信度降级",
+            "旧芯片存在硬件漏洞（公安部2024-09典型案例、央视2025-01曝光）；新国标GB/T 9081-2023防篡改但未铺开——关键结论用监管或第三方来源交叉验证。",
         )
-    return _rule("R704", "设备版本风险", False, "中", f"设备芯片标准：{chip or '未知'}", "")
+    return _rule("R704", "数据源可信度", False, "中", "数据源构成包含监管或第三方来源，可信度达标", "")
 
 
 def check_r35(profile):
@@ -707,7 +735,7 @@ _RULES = [
     ("R701", "数据完整性异常", "高", check_r31),
     ("R702", "上游发票缺失", "中", check_r32),
     ("R703", "上游单据与本地记录不一致", "高", check_r33),
-    ("R704", "设备版本风险", "中", check_r34),
+    ("R704", "数据源可信度", "中", check_r34),
     ("R604", "收入与应税所得严重不匹配", "中", check_r35),
     ("R804", "收购发票对象身份存疑", "高", check_r36),
     ("R805", "单户收购金额异常", "中", check_r37),
@@ -720,12 +748,14 @@ RULE_CHECKS = sorted(
 )
 
 
-def run_all(profile, invoices, fund_flows=None, contracts=None):
+def run_all(profile, invoices, fund_flows=None, contracts=None, external_docs=None, data_sources=None):
     """执行全部规则，返回命中列表。"""
     fund_flows = fund_flows if fund_flows is not None else pd.DataFrame(
         columns=["流水日期", "收付方向", "对方名称", "金额(元)", "备注", "关联合同号", "账户类型"]
     )
     contracts = contracts if contracts is not None else pd.DataFrame(columns=["合同号", "对方名称", "金额(元)", "签订日期"])
+    external_docs = external_docs if external_docs is not None else pd.DataFrame(columns=EXTERNAL_DOC_COLS)
+    data_sources = data_sources if data_sources is not None else pd.DataFrame(columns=DATA_SOURCE_COLS)
     p = profile.iloc[0].to_dict()
     hits = []
     for rule_id, name, default_level, fn in RULE_CHECKS:
@@ -736,6 +766,10 @@ def run_all(profile, invoices, fund_flows=None, contracts=None):
                 result = fn(invoices, fund_flows)
             elif rule_id == "R701":
                 result = fn(p, invoices)
+            elif rule_id == "R703":
+                result = fn(p, external_docs)
+            elif rule_id == "R704":
+                result = fn(p, data_sources)
             elif rule_id == "R401":
                 result = fn(invoices, p)
             elif rule_id == "R202":

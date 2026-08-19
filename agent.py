@@ -18,14 +18,17 @@ SYSTEM_PROMPT = (
 )
 
 
-def run_agent(user_message, scenario="risk", profile=None, invoices=None, fund_flows=None, contracts=None):
+def run_agent(user_message, scenario="risk", profile=None, invoices=None, fund_flows=None, contracts=None,
+              external_docs=None, data_sources=None):
     """返回 {"answer", "trace", "mode"}。"""
     if llm.available():
-        return _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts)
-    return _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, contracts)
+        return _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts,
+                              external_docs, data_sources)
+    return _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, contracts,
+                              external_docs, data_sources)
 
 
-def _load_context(scenario, profile, invoices, fund_flows, contracts):
+def _load_context(scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):
     """优先用页面传入的数据，否则用内置场景。"""
     if profile is not None:
         return {
@@ -33,12 +36,14 @@ def _load_context(scenario, profile, invoices, fund_flows, contracts):
             "invoices": invoices or [],
             "fund_flows": fund_flows or [],
             "contracts": contracts or [],
+            "external_docs": external_docs or [],
+            "data_sources": data_sources or [],
         }
     return tools.get_demo_scenario(scenario)
 
 
-def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts):
-    context = _load_context(scenario, profile, invoices, fund_flows, contracts)
+def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):
+    context = _load_context(scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources)
     context_text = json.dumps({
         "当前企业数据": {
             "profile": context["company_profile"],
@@ -55,9 +60,9 @@ def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contra
     return {"answer": answer, "trace": trace, "mode": "llm"}
 
 
-def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, contracts):
+def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):
     """关键词路由：演示'意图→工具→事实→回答'的链路，不依赖网络。"""
-    context = _load_context(scenario, profile, invoices, fund_flows, contracts)
+    context = _load_context(scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources)
     trace = []
     answer = ""
 
@@ -87,6 +92,8 @@ def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, co
             "invoices": context["invoices"],
             "fund_flows": context["fund_flows"],
             "contracts": context["contracts"],
+            "external_docs": context["external_docs"],
+            "data_sources": context["data_sources"],
         })
         trace.append({"tool": "run_tax_health_check", "arguments": "{}", "ok": True, "result": r})
         s = r["summary"]

@@ -20,7 +20,7 @@ PROFILE_COLS = [
     "注册地址", "关联户数",
     "申报销量(吨)", "设备销量(吨)", "测算销量(吨)", "区域参考销量(吨)",
     "申报单价(元/升)", "区域均价(元/升)", "液位仪月缺失率(%)",
-    "无票采购占比(%)", "上游进油单存在", "本地入库记录缺失", "设备芯片标准",
+    "无票采购占比(%)", "上游进油单存在", "本地入库记录缺失", "加油机税控芯片标准",
 ]
 
 INVOICE_COLS = [
@@ -34,9 +34,19 @@ FUND_COLS = [
 
 CONTRACT_COLS = ["合同号", "对方名称", "金额(元)", "签订日期"]
 
+# 外部单据表：来自供应商/监管/第三方的独立单据，用于与本地记录交叉比对
+EXTERNAL_DOC_COLS = ["单据号", "供应商", "品名", "数量", "单位", "金额(元)", "日期", "来源方"]
+
+# 数据源清单：给每个数据源打可信度标签，来源方=企业自报/企业内部/第三方/监管机构
+DATA_SOURCE_COLS = ["数据源", "来源方", "可否篡改", "版本", "留存月数", "可信度"]
+
 
 def _df(cols, rows):
     return pd.DataFrame(rows, columns=cols)
+
+
+def _empty(cols):
+    return pd.DataFrame(columns=cols)
 
 
 def _profile(kw):
@@ -83,6 +93,8 @@ def scenario_clean():
         "invoices": _df(INVOICE_COLS, invoices),
         "fund_flows": _df(FUND_COLS, funds),
         "contracts": _df(CONTRACT_COLS, contracts),
+        "external_docs": _empty(EXTERNAL_DOC_COLS),
+        "data_sources": _empty(DATA_SOURCE_COLS),
     }
 
 
@@ -154,6 +166,8 @@ def scenario_risk():
         "invoices": _df(INVOICE_COLS, invoices),
         "fund_flows": _df(FUND_COLS, funds),
         "contracts": _df(CONTRACT_COLS, contracts),
+        "external_docs": _empty(EXTERNAL_DOC_COLS),
+        "data_sources": _empty(DATA_SOURCE_COLS),
     }
 
 
@@ -169,7 +183,7 @@ def scenario_fuel():
         "申报销量(吨)": 100, "设备销量(吨)": 160, "测算销量(吨)": 150,
         "区域参考销量(吨)": 240, "申报单价(元/升)": 6.8, "区域均价(元/升)": 8.0,
         "液位仪月缺失率(%)": 12, "无票采购占比(%)": 45, "上游进油单存在": "是",
-        "本地入库记录缺失": "是", "设备芯片标准": "旧标准",
+        "本地入库记录缺失": "是", "加油机税控芯片标准": "旧标准",
     })
     invoices = [
         ("XS001", "2026-07-02", "销项发票", "汽油92#", 13, 3000000, 390000, "过路司机", "", "正常", "", ""),
@@ -184,11 +198,26 @@ def scenario_fuel():
     contracts = [
         ("HT-F1", "中石化湖南", 4000000, "2026-06-15"),
     ]
+    external_docs = [
+        ("WY-001", "中石化湖南", "汽油92#", 50, "吨", 300000, "2026-07-03", "供应商"),
+        ("WY-002", "中石化湖南", "柴油0#", 40, "吨", 240000, "2026-07-10", "供应商"),
+        ("WY-003", "中石化湖南", "汽油92#", 60, "吨", 360000, "2026-07-17", "供应商"),
+    ]
+    data_sources = [
+        ("申报数据", "企业自报", "可", "申报表", "长期", "低"),
+        ("收银台记录", "企业内部", "可", "本地软件", "长期", "低"),
+        ("液位仪", "企业内部", "可", "无网关", "6个月", "低"),
+        ("加油机税控芯片", "设备", "可破解", "旧标准", "长期", "低"),
+        ("供应商进油单", "第三方", "难", "纸质/系统", "长期", "高"),
+        ("危化品运单轨迹", "监管机构", "难", "交通部门系统", "长期", "高"),
+    ]
     return {
         "company_profile": profile,
         "invoices": _df(INVOICE_COLS, invoices),
         "fund_flows": _df(FUND_COLS, funds),
         "contracts": _df(CONTRACT_COLS, contracts),
+        "external_docs": _df(EXTERNAL_DOC_COLS, external_docs),
+        "data_sources": _df(DATA_SOURCE_COLS, data_sources),
     }
 
 
@@ -226,6 +255,8 @@ def scenario_case1():
         "invoices": _df(INVOICE_COLS, invoices),
         "fund_flows": _df(FUND_COLS, funds),
         "contracts": _df(CONTRACT_COLS, contracts),
+        "external_docs": _empty(EXTERNAL_DOC_COLS),
+        "data_sources": _empty(DATA_SOURCE_COLS),
     }
 
 
@@ -264,6 +295,8 @@ def scenario_case6():
         "invoices": _df(INVOICE_COLS, invoices),
         "fund_flows": _df(FUND_COLS, funds),
         "contracts": _df(CONTRACT_COLS, contracts),
+        "external_docs": _empty(EXTERNAL_DOC_COLS),
+        "data_sources": _empty(DATA_SOURCE_COLS),
     }
 
 

@@ -254,7 +254,7 @@ def test_21_upstream_docs_vs_local():
 
 
 def test_22_device_chip_risk():
-    p = profile({"行业": "成品油零售", "资产总额(万元)": 100, "设备芯片标准": "旧标准"})
+    p = profile({"行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "旧标准"})
     r = rule(rules.run_all(p, invoices([]), funds([]), contracts([])), "R704")
     assert r["hit"] and "降级" in r["evidence"], r
 
@@ -470,6 +470,39 @@ def test_43_rule_metadata_category_order():
     assert r19.get("category") == "组合规则", r19
 
 
+def test_44_external_docs_and_source_credibility():
+    fuel = generate_data.build_scenario("fuel")
+    hits = rules.run_all(
+        fuel["company_profile"], fuel["invoices"], fuel["fund_flows"], fuel["contracts"],
+        fuel["external_docs"], fuel["data_sources"],
+    )
+    r703 = rule(hits, "R703")
+    assert r703["hit"] and "外部单据 3 笔" in r703["evidence"], r703
+    r704 = rule(hits, "R704")
+    assert r704["hit"] and "税控芯片为旧标准" in r704["evidence"], r704
+    assert any(h["rule_id"] == "R802" for h in hits), [h["rule_id"] for h in hits]
+
+
+def test_45_source_credibility_two_step():
+    p = profile({
+        "行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "新国标",
+    })
+    internal = generate_data._df(generate_data.DATA_SOURCE_COLS, [
+        ("申报数据", "企业自报", "可", "申报表", "长期", "低"),
+        ("液位仪", "企业内部", "可", "无网关", "6个月", "低"),
+    ])
+    hits = rules.run_all(p, invoices([]), funds([]), contracts([]), None, internal)
+    r704 = rule(hits, "R704")
+    assert r704["hit"] and "内部自洽不等于真实" in r704["evidence"], r704
+
+    mixed = generate_data._df(generate_data.DATA_SOURCE_COLS, [
+        ("申报数据", "企业自报", "可", "申报表", "长期", "低"),
+        ("危化品运单轨迹", "监管机构", "难", "交通部门系统", "长期", "高"),
+    ])
+    hits2 = rules.run_all(p, invoices([]), funds([]), contracts([]), None, mixed)
+    assert not any(h["rule_id"] == "R704" for h in hits2), [h["rule_id"] for h in hits2]
+
+
 def test_39_risk_policy_link_general():
     case1 = generate_data.build_scenario("case1")
     hits1 = rules.run_all(case1["company_profile"], case1["invoices"], case1["fund_flows"], case1["contracts"])
@@ -608,6 +641,8 @@ def main():
     case(41, "负面清单按限制规则判定（未触发/命中）", test_41_restriction_card_semantics)
     case(42, "R602 大额调减项可单独命中（低危原子规则）", test_42_big_deduction_standalone)
     case(43, "规则分类编号与组合规则元数据", test_43_rule_metadata_category_order)
+    case(44, "外部单据比对 + 数据源可信度（fuel 场景）", test_44_external_docs_and_source_credibility)
+    case(45, "数据源可信度两步判定（内部自洽≠真实）", test_45_source_credibility_two_step)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

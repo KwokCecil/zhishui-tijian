@@ -35,6 +35,16 @@ def _contracts_df(rows):
                         columns=generate_data.CONTRACT_COLS)
 
 
+def _external_docs_df(rows):
+    return pd.DataFrame([{c: r.get(c, "") for c in generate_data.EXTERNAL_DOC_COLS} for r in rows],
+                        columns=generate_data.EXTERNAL_DOC_COLS)
+
+
+def _data_sources_df(rows):
+    return pd.DataFrame([{c: r.get(c, "") for c in generate_data.DATA_SOURCE_COLS} for r in rows],
+                        columns=generate_data.DATA_SOURCE_COLS)
+
+
 def _to_records(df):
     return json.loads(df.to_json(orient="records", force_ascii=False))
 
@@ -82,19 +92,33 @@ def tool(name, description, parameters, required):
                 "items": {"type": "object"},
                 "description": "合同列表，字段：合同号/对方名称/金额(元)/签订日期",
             },
+            "external_docs": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "外部单据列表，字段：单据号/供应商/品名/数量/单位/金额(元)/日期/来源方",
+            },
+            "data_sources": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "数据源清单，字段：数据源/来源方/可否篡改/版本/留存月数/可信度",
+            },
         },
     },
     ["profile"],
 )
-def run_tax_health_check(profile, invoices=None, fund_flows=None, contracts=None):
+def run_tax_health_check(profile, invoices=None, fund_flows=None, contracts=None, external_docs=None, data_sources=None):
     invoices = invoices or []
     fund_flows = fund_flows or []
     contracts = contracts or []
+    external_docs = external_docs or []
+    data_sources = data_sources or []
     hits = rules.run_all(
         _profile_df(profile),
         _invoices_df(invoices),
         _funds_df(fund_flows),
         _contracts_df(contracts),
+        _external_docs_df(external_docs),
+        _data_sources_df(data_sources),
     )
     summary = scoring.risk_summary(hits)
     return {"summary": summary, "hits": hits}
@@ -173,6 +197,8 @@ def get_demo_scenario(name):
         "invoices": _to_records(data["invoices"]),
         "fund_flows": _to_records(data["fund_flows"]),
         "contracts": _to_records(data["contracts"]),
+        "external_docs": _to_records(data["external_docs"]),
+        "data_sources": _to_records(data["data_sources"]),
         "row_counts": {k: len(v) for k, v in data.items()},
     }
 
