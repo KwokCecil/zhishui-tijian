@@ -142,8 +142,13 @@ def de_paren(text):
 
 
 def cond_text(c):
-    mark = "✓" if c["pass"] is True else ("✗" if c["pass"] is False else "?")
-    return f"{c['field']} {c['value']} {mark}"
+    if c["pass"] is True:
+        mark = '<span style="color:#16a34a;font-weight:700">✓</span>'
+    elif c["pass"] is False:
+        mark = '<span style="color:#dc2626;font-weight:700">✗</span>'
+    else:
+        mark = '<span style="color:#d97706;font-weight:700">?</span>'
+    return f"{mark} {c['field']} {c['value']}"
 
 
 with st.sidebar:
@@ -257,21 +262,42 @@ st.markdown(
 )
 
 st.subheader("命中特征")
-for h in hits:
-    merged = f'<span class="muted">已并入 {h["merged_into"]}</span>' if h.get("merged_into") else ""
+
+
+def hit_sort_key(h):
+    rank = {"高": 3, "中": 2, "低": 1, "提示": 1}.get(h.get("level"), 1)
+    return (-rank, h.get("rule_id", ""))
+
+
+combo_hits = [h for h in hits if h.get("kind") == "combo"]
+standalone = [h for h in hits if not h.get("merged_into") and h.get("kind") != "combo"]
+combo_hits.sort(key=hit_sort_key)
+standalone.sort(key=hit_sort_key)
+
+for h in combo_hits:
+    subs = [s for s in hits if s.get("merged_into") == h["rule_id"]]
+    subs.sort(key=hit_sort_key)
+    hit_deps = "、".join(s["rule_id"] for s in subs)
+    sub_lines = "".join(
+        f'<div style="margin:6px 0 0 14px;padding-top:6px;border-top:1px dashed #e2e8f0">'
+        f'{level_pill(s["level"])}<b>{s["rule_id"]} {s["name"]}</b><br>'
+        f'<span class="cond">证据：{de_paren(s["evidence"])}</span></div>'
+        for s in subs
+    )
     st.markdown(
-        f'<div class="row">{level_pill(h["level"])}<b>{h["rule_id"]} {h["name"]}</b>{merged}<br>'
+        f'<div class="row">{level_pill(h["level"])}<b>{h["rule_id"]} {h["name"]}</b>'
+        f'<span class="muted">组合规则 · 构成 {hit_deps}</span><br>'
+        f'<span class="cond">建议：{de_paren(h["suggestion"])}</span>{sub_lines}</div>',
+        unsafe_allow_html=True,
+    )
+
+for h in standalone:
+    st.markdown(
+        f'<div class="row">{level_pill(h["level"])}<b>{h["rule_id"]} {h["name"]}</b><br>'
         f'<span class="cond">证据：{de_paren(h["evidence"])}</span><br>'
         f'<span class="cond">建议：{de_paren(h["suggestion"])}</span></div>',
         unsafe_allow_html=True,
     )
-
-st.subheader("监管视角 Top3")
-if summary["top3"]:
-    for i, t in enumerate(summary["top3"], 1):
-        st.markdown(f"{i}. **{t['name']}** · {t['rule_id']} · {t['level']}：{de_paren(t['evidence'])}")
-else:
-    st.markdown("- 无")
 
 st.subheader("优惠政策")
 usable = [m for m in matched if m["status"] in ("可享受", "需人工确认", "命中限制")]
