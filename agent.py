@@ -100,7 +100,7 @@ def _clean_answer(text):
     text = re.sub(r"(?m)^(\s*)[*•]\s+", r"\1- ", text)
     text = re.sub(r"(?m)^\s*([-*_]\s*){3,}$", "", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"\n{2,}", "\n", text)
     lines = text.strip().split("\n")
     while lines and re.search(r"(需要我|要我|是否(要|需)|要不要)[^。\n]{0,30}吗[？?]?$", lines[-1].strip()):
         lines.pop()
@@ -172,7 +172,7 @@ def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contra
             user_message, scenario, profile, invoices, fund_flows, contracts,
             external_docs, data_sources,
         )
-        offline["answer"] = offline["answer"] + "\n\n在线模式未拿到有效体检结果，以上为规则引擎结果。"
+        offline["answer"] = offline["answer"] + "\n在线模式未拿到有效体检结果，以上为规则引擎结果。"
         return offline
     return {"answer": _clean_answer(answer), "trace": trace, "mode": "llm"}
 
@@ -253,4 +253,4 @@ def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, co
         trace.append({"tool": "generate_report", "arguments": "{}", "ok": True, "result": r})
         answer = "我还没理解你的问题。可以问：'这家公司有什么风险？'、'能享受哪些优惠政策？'、'是否符合小微条件？'"
 
-    return {"answer": answer, "trace": trace, "mode": "offline"}
+    return {"answer": _clean_answer(answer), "trace": trace, "mode": "offline"}

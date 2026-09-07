@@ -612,7 +612,7 @@ def test_52_answer_plain_text_no_markdown():
     clean = agent._clean_answer(dirty)
     for mark in ("**", "##", "***", "`", "&#x20;"):
         assert mark not in clean, clean
-    assert "\n\n\n" not in clean, clean
+    assert "\n\n" not in clean, clean
     assert "风险指数 60" in clean and "- R401：税负率异常" in clean, clean
 
 
