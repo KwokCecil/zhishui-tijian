@@ -21,7 +21,8 @@ SYSTEM_PROMPT = (
     "8. 内置场景先用 load_scenario 加载，再传 scenario 给 run_tax_health_check，不要手工复制完整数据；"
     "上传场景直接传 scenario='upload'。\n"
     "9. 如果 run_tax_health_check 返回错误，修正参数重试；在拿到真实结果前不要下任何风险结论；\n"
-    "10. 回答开头先给结论：风险指数、等级、命中条数，再列风险点；\n"
+    "10. 涉及风险判断的回答开头先给结论：风险指数、等级、命中条数，再列风险点；"
+    "纯政策/资格类问题直接给政策结论，不要先报风险指数；\n"
     "11. 能直接查的信息（如小微资格、可享优惠）用 check_small_micro / match_policy_cards 查完直接给出结论，"
     "不要反问用户是否需要；反问只在需要用户做选择时使用；\n"
     "12. 回答中禁止出现任何工具/函数名称（如 load_scenario、run_tax_health_check、check_small_micro、"
@@ -93,6 +94,7 @@ def _sanitize_answer(text):
 def _clean_answer(text):
     """剥掉 Markdown 标记、压缩空行与行尾空格，输出纯文本。"""
     text = _sanitize_answer(text)
+    text = text.replace("&#x20;", "").replace("&nbsp;", " ")
     text = text.replace("**", "").replace("__", "").replace("`", "")
     text = re.sub(r"(?m)^#{1,6}\s*", "", text)
     text = re.sub(r"(?m)^(\s*)[*•]\s+", r"\1- ", text)

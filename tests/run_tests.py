@@ -608,9 +608,9 @@ def test_51_offline_agent_action_intent():
 
 
 def test_52_answer_plain_text_no_markdown():
-    dirty = "## 结论\n\n**风险指数 60，高风险**\n\n\n\n- R401：税负率异常\n\n***\n\n请查看`报告`。"
+    dirty = "## 结论&#x20;\n\n**风险指数 60，高风险**\n\n\n\n- R401：税负率异常\n\n***\n\n请查看`报告`。"
     clean = agent._clean_answer(dirty)
-    for mark in ("**", "##", "***", "`"):
+    for mark in ("**", "##", "***", "`", "&#x20;"):
         assert mark not in clean, clean
     assert "\n\n\n" not in clean, clean
     assert "风险指数 60" in clean and "- R401：税负率异常" in clean, clean

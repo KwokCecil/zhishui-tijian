@@ -12,7 +12,7 @@ pip install -r requirements.txt
 # 1. 生成演示数据（clean/risk/fuel/solar/lotus 五个场景）
 python generate_data.py --all
 
-# 2. 运行验收测试（25 条）
+# 2. 运行验收测试（52 条）
 python tests/run_tests.py
 
 # 3. 启动演示页面
@@ -32,7 +32,7 @@ zhishui-tijian/
 ├── agent.py              # Agent 对话入口（在线/离线两种模式）
 ├── app.py                # Streamlit 页面：上传/选场景 → 报告
 ├── config/policy_cards.json  # 首批政策卡片（8 张核心卡，文号待官网复核）
-├── tests/run_tests.py    # 验收用例（25 条规则用例 + 8 条工具层用例）
+├── tests/run_tests.py    # 验收用例（52 条：规则/组合/政策/工具层/Agent 行为）
 └── data/                 # 生成的模拟数据
 ```
 
@@ -107,7 +107,7 @@ set ZHI_SHUI_LLM_MODEL=deepseek-chat
 - 六税两费适用对象：小规模纳税人、个体工商户、小型微利企业；P104 负面清单为限制规则，
   命中=不得享受，未触发=不影响。
 - 例：案例一命中 G001(30)+R604(30)=60 → 高风险（R601/R602 已并入 G001）；
-  案例六命中 R804(60)+R805(30)=90 → 高风险；2 条高危封顶 100 → 高风险。
+  案例六命中 G004(60) → 高风险（R804/R805 并入 G004，不重复计分）。
 
 ## 规则输出结构
 
