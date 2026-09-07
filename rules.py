@@ -696,9 +696,15 @@ def check_r36(invoices):
     suspects = agri[agri.get("销售方类型", pd.Series(dtype=str)).fillna("") != "农业生产者"]
     if not suspects.empty:
         names = "、".join(str(x) for x in suspects["对方名称"].dropna().unique()[:5])
+        total = float(suspects["金额(元)"].apply(_num).sum())
+        evidence = (
+            f"{len(suspects)} 张收购发票销售方身份存疑（非自产农业生产者），对象：{names}，"
+            f"涉及金额 {total/10000:.0f} 万元；后果测算：若已申报抵扣，进项税额转出约 {total*0.09/10000:.0f} 万元"
+            "（按9%计算抵扣口径；如用于生产13%税率货物按10%扣除率测算）。"
+        )
         return _rule(
             "R804", "收购发票对象身份存疑", True, "高",
-            f"{len(suspects)} 张收购发票销售方身份存疑（非自产农业生产者），对象：{names}",
+            evidence,
             "农产品收购发票'自己开、自己抵'，对象必须是自产农业生产者；输出身份与业务流核验清单：自产证明、收购现场记录、物流、付款到农户本人。"
             "纠正路径：可要求贩子到办税服务大厅代开增值税发票补正。",
         )
