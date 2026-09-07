@@ -596,6 +596,17 @@ def test_50_offtopic_and_report_intent():
     assert any(t["tool"] == "run_tax_health_check" for t in r3["trace"]), r3["trace"]
 
 
+def test_51_offline_agent_action_intent():
+    r = agent.run_agent("这家公司下一步最重要的行动是什么", scenario="risk")
+    assert r["mode"] == "offline", r
+    assert "我还没理解你的问题" not in r["answer"], r
+    assert "行动" in r["answer"], r
+    assert any(t["tool"] == "run_tax_health_check" for t in r["trace"]), r["trace"]
+
+    r2 = agent.run_agent("有什么整改建议？", scenario="solar")
+    assert "行动" in r2["answer"] and "G001" in r2["answer"], r2
+
+
 def test_46_gov_source_still_tamperable():
     p = profile({
         "行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "新国标",
@@ -755,6 +766,7 @@ def main():
     case(48, "场景句柄传参与容错JSON解析", test_48_scenario_handle_and_json_parse)
     case(49, "回答清洗：禁止泄露工具名", test_49_answer_sanitized_no_tool_names)
     case(50, "无关问题短路 + 报告请求直接生成", test_50_offtopic_and_report_intent)
+    case(51, "离线行动建议意图（下一步/整改建议）", test_51_offline_agent_action_intent)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

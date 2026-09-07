@@ -211,6 +211,31 @@ def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, co
             lines.append(f"- {t['rule_id']} [{t['level']}] {t['name']}：{t['evidence']}")
         answer += ("\n\n" if answer else "") + "\n".join(lines)
 
+    if any(k in user_message for k in ("行动", "建议", "下一步", "整改", "怎么办", "处理", "措施")):
+        r = tools.execute_tool("run_tax_health_check", {
+            "profile": context["company_profile"],
+            "invoices": context["invoices"],
+            "fund_flows": context["fund_flows"],
+            "contracts": context["contracts"],
+            "external_docs": context["external_docs"],
+            "data_sources": context["data_sources"],
+        })
+        trace.append({"tool": "run_tax_health_check", "arguments": "{}", "ok": True, "result": r})
+        level_order = {"高": 0, "中": 1, "低": 2, "提示": 3}
+        active = sorted(
+            (h for h in r["hits"] if h.get("hit")),
+            key=lambda h: level_order.get(h.get("level", "提示"), 9),
+        )
+        if active:
+            lines = [f"下一步行动建议（按优先级，共命中 {len(active)} 条）："]
+            for h in active[:3]:
+                lines.append(f"- [{h['level']}] {h['rule_id']} {h['name']}：{h['suggestion']}（证据：{h['evidence']}）")
+            if len(active) > 3:
+                lines.append(f"其余 {len(active) - 3} 条详见体检报告。")
+            answer += ("\n\n" if answer else "") + "\n".join(lines)
+        elif not answer:
+            answer = "未命中风险特征，暂无需整改；可进一步问：'能享受哪些优惠政策？'"
+
     if not answer:
         r = tools.execute_tool("generate_report", {
             "hits": [],
