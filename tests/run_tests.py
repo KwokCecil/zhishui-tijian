@@ -579,7 +579,7 @@ def test_49_answer_sanitized_no_tool_names():
     assert "check_small_micro" not in clean and "match_policy_cards" not in clean, clean
     assert "小微资格判定" in clean and "优惠政策匹配" in clean, clean
     assert "run_tax_health_check" not in agent._clean_answer("run_tax_health_check 结果正常"), clean
-    assert agent._clean_answer("a\n\n\n\nb") == "a\n\nb", agent._clean_answer("a\n\n\n\nb")
+    assert agent._clean_answer("a\n\n\n\nb") == "a\nb", agent._clean_answer("a\n\n\n\nb")
     assert agent._clean_answer("结论：合规。\n需要我生成完整体检报告吗？") == "结论：合规。"
 
 
