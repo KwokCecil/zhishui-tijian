@@ -457,39 +457,44 @@ with st.container(border=True):
                 st.markdown(f"**→ {t['tool']}**")
                 st.json(t["result"])
     st.markdown(chat_html(st.session_state["chat_history"]), unsafe_allow_html=True)
+    pending = st.session_state.pop("pending_prompt", None)
+    if pending:
+        with st.spinner("Agent 正在调用工具…"):
+            try:
+                result = agent.run_agent(
+                    pending,
+                    scenario=agent_data["scenario"] or "risk",
+                    profile=agent_data["profile"],
+                    invoices=agent_data["invoices"],
+                    fund_flows=agent_data["fund_flows"],
+                    contracts=agent_data["contracts"],
+                    external_docs=agent_data["external_docs"],
+                    data_sources=agent_data["data_sources"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.warning(f"在线模式失败：{exc}，已切换离线演示")
+                result = agent._run_offline_agent(
+                    pending,
+                    scenario=agent_data["scenario"] or "risk",
+                    profile=agent_data["profile"],
+                    invoices=agent_data["invoices"],
+                    fund_flows=agent_data["fund_flows"],
+                    contracts=agent_data["contracts"],
+                    external_docs=agent_data["external_docs"],
+                    data_sources=agent_data["data_sources"],
+                )
+        st.session_state["chat_history"].append(("assistant", result["answer"]))
+        st.session_state["last_trace"] = result.get("trace") or []
+        st.session_state["last_mode"] = result.get("mode", "")
+        st.rerun()
+
     prompt = st.chat_input("问它，例如：这家公司有什么风险？")
     if prompt:
         if agent_data["scenario"] is None and agent_data["profile"] is None:
             st.session_state["chat_history"].append(("assistant", "请先在左侧生成或上传数据。"))
         else:
             st.session_state["chat_history"].append(("user", prompt))
-            with st.spinner("Agent 正在调用工具…"):
-                try:
-                    result = agent.run_agent(
-                        prompt,
-                        scenario=agent_data["scenario"] or "risk",
-                        profile=agent_data["profile"],
-                        invoices=agent_data["invoices"],
-                        fund_flows=agent_data["fund_flows"],
-                        contracts=agent_data["contracts"],
-                        external_docs=agent_data["external_docs"],
-                        data_sources=agent_data["data_sources"],
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    st.warning(f"在线模式失败：{exc}，已切换离线演示")
-                    result = agent._run_offline_agent(
-                        prompt,
-                        scenario=agent_data["scenario"] or "risk",
-                        profile=agent_data["profile"],
-                        invoices=agent_data["invoices"],
-                        fund_flows=agent_data["fund_flows"],
-                        contracts=agent_data["contracts"],
-                        external_docs=agent_data["external_docs"],
-                        data_sources=agent_data["data_sources"],
-                    )
-            st.session_state["chat_history"].append(("assistant", result["answer"]))
-            st.session_state["last_trace"] = result.get("trace") or []
-            st.session_state["last_mode"] = result.get("mode", "")
+            st.session_state["pending_prompt"] = prompt
         st.rerun()
 
 st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。")

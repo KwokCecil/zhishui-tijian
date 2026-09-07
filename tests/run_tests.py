@@ -607,6 +607,15 @@ def test_51_offline_agent_action_intent():
     assert "行动" in r2["answer"] and "G001" in r2["answer"], r2
 
 
+def test_52_answer_plain_text_no_markdown():
+    dirty = "## 结论\n\n**风险指数 60，高风险**\n\n\n\n- R401：税负率异常\n\n***\n\n请查看`报告`。"
+    clean = agent._clean_answer(dirty)
+    for mark in ("**", "##", "***", "`"):
+        assert mark not in clean, clean
+    assert "\n\n\n" not in clean, clean
+    assert "风险指数 60" in clean and "- R401：税负率异常" in clean, clean
+
+
 def test_46_gov_source_still_tamperable():
     p = profile({
         "行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "新国标",
@@ -767,6 +776,7 @@ def main():
     case(49, "回答清洗：禁止泄露工具名", test_49_answer_sanitized_no_tool_names)
     case(50, "无关问题短路 + 报告请求直接生成", test_50_offtopic_and_report_intent)
     case(51, "离线行动建议意图（下一步/整改建议）", test_51_offline_agent_action_intent)
+    case(52, "回答纯文本化：剥离Markdown标记与多余空行", test_52_answer_plain_text_no_markdown)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

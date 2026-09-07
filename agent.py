@@ -27,7 +27,9 @@ SYSTEM_PROMPT = (
     "12. 回答中禁止出现任何工具/函数名称（如 load_scenario、run_tax_health_check、check_small_micro、"
     "match_policy_cards、generate_report 等），一律用自然语言表达，例如直接说'符合小微条件、可享受小微低税率'；\n"
     "13. 与税务体检无关的问题（如天气、数学、闲聊）直接说明'这不属于税务体检范围'即可，"
-    "不要重复体检结果；只有用户明确要求时再提供体检摘要。"
+    "不要重复体检结果；只有用户明确要求时再提供体检摘要；\n"
+    "14. 回答使用纯文本：禁止任何 Markdown 标记（加粗星号、井号标题、反引号、分隔线），"
+    "需要列表时用短横线开头，段落之间不要留空行。"
 )
 
 TOOL_NAME_LABELS = {
@@ -89,8 +91,12 @@ def _sanitize_answer(text):
 
 
 def _clean_answer(text):
-    """压缩空行与行尾空格，让 Markdown 排版更紧凑。"""
+    """剥掉 Markdown 标记、压缩空行与行尾空格，输出纯文本。"""
     text = _sanitize_answer(text)
+    text = text.replace("**", "").replace("__", "").replace("`", "")
+    text = re.sub(r"(?m)^#{1,6}\s*", "", text)
+    text = re.sub(r"(?m)^(\s*)[*•]\s+", r"\1- ", text)
+    text = re.sub(r"(?m)^\s*([-*_]\s*){3,}$", "", text)
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     lines = text.strip().split("\n")
