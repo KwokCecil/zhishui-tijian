@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import generate_data  # noqa: E402
 import agent  # noqa: E402
+import contract  # noqa: E402
 import policies  # noqa: E402
 import rules  # noqa: E402
 import scoring  # noqa: E402
@@ -616,6 +617,28 @@ def test_52_answer_plain_text_no_markdown():
     assert "风险指数 60" in clean and "- R401：税负率异常" in clean, clean
 
 
+def test_53_upload_contract_validation():
+    d = generate_data.build_scenario("clean")
+    r = contract.validate_tables(d)
+    assert r["ok"] and r["checked"] == 6, r
+
+    bad = dict(d)
+    bad["invoices"] = d["invoices"].drop(columns=["税额(元)"])
+    r2 = contract.validate_tables(bad)
+    assert not r2["ok"] and any("税额(元)" in e for e in r2["errors"]), r2
+
+    r3 = contract.validate_tables({"company_profile": None})
+    assert not r3["ok"] and len(r3["errors"]) == 4, r3
+
+    csv_text = d["invoices"].head(5).to_csv(index=False).replace(
+        str(d["invoices"].iloc[2]["金额(元)"]), "abc", 1
+    )
+    import io
+    bad_df = pd.read_csv(io.StringIO(csv_text), encoding="utf-8-sig")
+    r4 = contract.validate_tables({**d, "invoices": bad_df})
+    assert not r4["ok"] and any("非数值" in e for e in r4["errors"]), r4
+
+
 def test_46_gov_source_still_tamperable():
     p = profile({
         "行业": "成品油零售", "资产总额(万元)": 100, "加油机税控芯片标准": "新国标",
@@ -777,6 +800,7 @@ def main():
     case(50, "无关问题短路 + 报告请求直接生成", test_50_offtopic_and_report_intent)
     case(51, "离线行动建议意图（下一步/整改建议）", test_51_offline_agent_action_intent)
     case(52, "回答纯文本化：剥离Markdown标记与多余空行", test_52_answer_plain_text_no_markdown)
+    case(53, "上传数据契约校验：缺列/缺表/类型错拦截", test_53_upload_contract_validation)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

@@ -12,7 +12,7 @@ pip install -r requirements.txt
 # 1. 生成演示数据（clean/risk/fuel/solar/lotus 五个场景）
 python generate_data.py --all
 
-# 2. 运行验收测试（52 条）
+# 2. 运行验收测试（53 条）
 python tests/run_tests.py
 
 # 3. 启动演示页面
@@ -24,6 +24,7 @@ streamlit run app.py
 ```
 zhishui-tijian/
 ├── generate_data.py      # 生成四类模拟数据（企业指标/发票/资金/合同），内置风险种子
+├── contract.py           # 上传数据契约校验：缺列/缺表/类型错在入口处拦截
 ├── rules.py              # 风险特征库：每个特征一个函数，统一输出结构
 ├── scoring.py            # 风险评分（100-命中加权分；等级按高危特征/组合直接升级）
 ├── policies.py           # 政策卡片匹配（机会筛查模块）
@@ -32,7 +33,7 @@ zhishui-tijian/
 ├── agent.py              # Agent 对话入口（在线/离线两种模式）
 ├── app.py                # Streamlit 页面：上传/选场景 → 报告
 ├── config/policy_cards.json  # 首批政策卡片（8 张核心卡，文号待官网复核）
-├── tests/run_tests.py    # 验收用例（52 条：规则/组合/政策/工具层/Agent 行为）
+├── tests/run_tests.py    # 验收用例（53 条：规则/组合/政策/工具层/Agent 行为/数据契约）
 └── data/                 # 生成的模拟数据
 ```
 

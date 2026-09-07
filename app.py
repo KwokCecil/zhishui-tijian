@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """智税体检 Streamlit 页面。"""
 
+import json
 import os
 import re
 import html as html_lib
@@ -9,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 import agent
+import contract
 import generate_data
 import llm
 import policies
@@ -101,6 +103,13 @@ def load_from_upload(uploaded_files):
     return data
 
 
+@st.cache_data(show_spinner=False)
+def template_csv_bytes(key):
+    """用 clean 场景的列结构生成上传模板（含 2 行示例）。"""
+    d = generate_data.build_scenario("clean")
+    return d[key].head(2).to_csv(index=False).encode("utf-8-sig")
+
+
 def profile_summary(profile):
     p = profile.iloc[0].to_dict()
     fields = [
@@ -175,7 +184,7 @@ def chat_html(history):
 
 with st.sidebar:
     st.header("数据源")
-    mode = st.radio("选择方式", ["内置演示场景", "上传 CSV"], index=0)
+    mode = st.radio("选择方式", ["内置演示场景", "上传 CSV（进阶）"], index=0)
     for key in ("data", "scenario", "report"):
         if key not in st.session_state:
             st.session_state[key] = None
@@ -195,14 +204,24 @@ with st.sidebar:
             st.session_state["scenario"] = scenario
             st.session_state["report"] = None
     else:
-        up_profile = st.file_uploader("企业指标 CSV", type="csv")
-        up_invoices = st.file_uploader("发票明细 CSV", type="csv")
-        up_funds = st.file_uploader("资金流水 CSV", type="csv")
-        up_contracts = st.file_uploader("合同 CSV", type="csv")
+        with st.expander("📄 先下载 CSV 模板（含 2 行示例，对照填数即可）"):
+            for key, (label, _cols, req) in contract.TABLE_CONTRACTS.items():
+                mark = "必传" if req else "可选"
+                st.download_button(
+                    f"{label}模板（{mark}）",
+                    data=template_csv_bytes(key),
+                    file_name=f"模板_{label}.csv",
+                    mime="text/csv",
+                    key=f"tpl_{key}",
+                )
+        up_profile = st.file_uploader("企业指标 CSV（必传）", type="csv")
+        up_invoices = st.file_uploader("发票明细 CSV（必传）", type="csv")
+        up_funds = st.file_uploader("资金流水 CSV（必传）", type="csv")
+        up_contracts = st.file_uploader("合同 CSV（必传）", type="csv")
         up_external = st.file_uploader("外部单据 CSV（可选）", type="csv")
         up_sources = st.file_uploader("数据源清单 CSV（可选）", type="csv")
         if st.button("开始体检", type="primary"):
-            st.session_state["data"] = load_from_upload({
+            uploaded = load_from_upload({
                 "company_profile": up_profile,
                 "invoices": up_invoices,
                 "fund_flows": up_funds,
@@ -210,8 +229,20 @@ with st.sidebar:
                 "external_docs": up_external,
                 "data_sources": up_sources,
             })
-            st.session_state["scenario"] = None
-            st.session_state["report"] = None
+            check = contract.validate_tables(uploaded)
+            if check["ok"]:
+                st.session_state["data"] = uploaded
+                st.session_state["scenario"] = None
+                st.session_state["report"] = None
+            st.session_state["upload_check"] = check
+        upload_check = st.session_state.get("upload_check")
+        if upload_check:
+            if upload_check["ok"]:
+                st.success(f"数据契约校验通过（{upload_check['checked']} 张表进入规则引擎）。")
+            for err in upload_check["errors"]:
+                st.error(err)
+            for warn in upload_check["warnings"]:
+                st.warning(warn)
 
 data = st.session_state.get("data")
 if data is not None and st.session_state.get("scenario"):
@@ -448,6 +479,43 @@ else:
         "external_docs": tools._to_records(data["external_docs"]) if "external_docs" in data and not data["external_docs"].empty else [],
         "data_sources": tools._to_records(data["data_sources"]) if "data_sources" in data and not data["data_sources"].empty else [],
     }
+
+
+def _ask_agent(prompt):
+    """统一 Agent 调用入口：在线失败自动降级离线。"""
+    try:
+        return agent.run_agent(
+            prompt,
+            scenario=agent_data["scenario"] or "risk",
+            profile=agent_data["profile"],
+            invoices=agent_data["invoices"],
+            fund_flows=agent_data["fund_flows"],
+            contracts=agent_data["contracts"],
+            external_docs=agent_data["external_docs"],
+            data_sources=agent_data["data_sources"],
+        )
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"在线模式失败：{exc}，已切换离线演示")
+        return agent._run_offline_agent(
+            prompt,
+            scenario=agent_data["scenario"] or "risk",
+            profile=agent_data["profile"],
+            invoices=agent_data["invoices"],
+            fund_flows=agent_data["fund_flows"],
+            contracts=agent_data["contracts"],
+            external_docs=agent_data["external_docs"],
+            data_sources=agent_data["data_sources"],
+        )
+
+
+def _plain_box(title, text, border_color):
+    body = html_lib.escape(text)
+    st.markdown(
+        f'<div style="border:1px solid {border_color};border-radius:10px;padding:10px 12px;">'
+        f'<div style="font-weight:700;margin-bottom:6px;">{title}</div>'
+        f'<div style="white-space:pre-wrap;font-size:14px;line-height:1.6;">{body}</div></div>',
+        unsafe_allow_html=True,
+    )
 with st.container(border=True):
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
@@ -460,29 +528,7 @@ with st.container(border=True):
     pending = st.session_state.pop("pending_prompt", None)
     if pending:
         with st.spinner("Agent 正在调用工具…"):
-            try:
-                result = agent.run_agent(
-                    pending,
-                    scenario=agent_data["scenario"] or "risk",
-                    profile=agent_data["profile"],
-                    invoices=agent_data["invoices"],
-                    fund_flows=agent_data["fund_flows"],
-                    contracts=agent_data["contracts"],
-                    external_docs=agent_data["external_docs"],
-                    data_sources=agent_data["data_sources"],
-                )
-            except Exception as exc:  # noqa: BLE001
-                st.warning(f"在线模式失败：{exc}，已切换离线演示")
-                result = agent._run_offline_agent(
-                    pending,
-                    scenario=agent_data["scenario"] or "risk",
-                    profile=agent_data["profile"],
-                    invoices=agent_data["invoices"],
-                    fund_flows=agent_data["fund_flows"],
-                    contracts=agent_data["contracts"],
-                    external_docs=agent_data["external_docs"],
-                    data_sources=agent_data["data_sources"],
-                )
+            result = _ask_agent(pending)
         st.session_state["chat_history"].append(("assistant", result["answer"]))
         st.session_state["last_trace"] = result.get("trace") or []
         st.session_state["last_mode"] = result.get("mode", "")
@@ -496,5 +542,51 @@ with st.container(border=True):
             st.session_state["chat_history"].append(("user", prompt))
             st.session_state["pending_prompt"] = prompt
         st.rerun()
+
+
+st.subheader("对比演示：纯大模型 vs 规则+大模型")
+st.caption(
+    "同一个问题、同一份数据。左侧：模型跳过工具与规则直接判断；"
+    "右侧：本产品的路径——规则引擎出事实，模型只做表达。"
+)
+if not llm.available():
+    st.info("未配置模型 API，无法运行对比演示（左侧需要真实调用模型）；可在应用 Secrets 中配置后使用。")
+else:
+    cmp_q = st.text_input(
+        "对比问题",
+        value="这家公司有什么税务风险？能享受哪些优惠政策？",
+        key="cmp_question",
+    )
+    if st.button("运行对比", type="primary"):
+        prof = {k: (None if pd.isna(v) else v) for k, v in profile.iloc[0].to_dict().items()}
+        digest_parts = ["【企业指标】" + json.dumps(prof, ensure_ascii=False, default=str)]
+        for label, df in (("发票明细", invoices), ("资金流水", fund_flows), ("合同", contracts)):
+            if df is not None and not df.empty:
+                digest_parts.append(f"【{label}】\n{df.head(30).to_csv(index=False)}")
+        pure_prompt = (
+            "你是一名资深税务专家，熟悉中国税收政策。下面是一家企业的税务相关数据。\n"
+            + "\n".join(digest_parts)
+            + f"\n\n请直接回答：{cmp_q}\n"
+            + "要求：给出具体结论——风险点、可享受的优惠政策及文号、涉及金额测算。"
+        )
+        with st.spinner("两路同时调用模型…"):
+            try:
+                pure_answer = agent._clean_answer(
+                    llm.complete(
+                        pure_prompt,
+                        system="你是一名资深税务专家，熟悉中国税收政策。",
+                        temperature=0.3,
+                        max_tokens=800,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                pure_answer = f"调用失败：{exc}"
+            agent_result = _ask_agent(cmp_q)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            _plain_box("① 纯大模型直接判断（无工具、无规则）", pure_answer, "#fca5a5")
+        with col_b:
+            _plain_box("② 规则引擎 + 大模型（本产品路径）", agent_result["answer"], "#86efac")
+
 
 st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。")
