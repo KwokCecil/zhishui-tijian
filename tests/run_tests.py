@@ -581,7 +581,9 @@ def test_49_answer_sanitized_no_tool_names():
     assert "小微资格判定" in clean and "优惠政策匹配" in clean, clean
     assert "run_tax_health_check" not in agent._clean_answer("run_tax_health_check 结果正常"), clean
     assert agent._clean_answer("a\n\n\n\nb") == "a\nb", agent._clean_answer("a\n\n\n\nb")
-    assert agent._clean_answer("结论：合规。\n需要我生成完整体检报告吗？") == "结论：合规。"
+    assert agent._clean_answer("结论：合规。\n需要我生成完整体检报告吗？") == (
+        "结论：合规。\n完整报告见页面'体检报告'区域，可预览与下载。"
+    )
 
 
 def test_50_offtopic_and_report_intent():
@@ -593,7 +595,8 @@ def test_50_offtopic_and_report_intent():
     assert "风险指数" not in r2["answer"], r2
 
     r3 = agent.run_agent("生成报告吧", scenario="risk")
-    assert "风险指数" in r3["answer"] and "##" in r3["answer"], r3
+    assert "报告已生成" in r3["answer"] and "##" not in r3["answer"], r3
+    assert r3.get("kind") == "report" and "风险指数" in r3["report_payload"]["report"], r3
     assert any(t["tool"] == "run_tax_health_check" for t in r3["trace"]), r3["trace"]
 
 
@@ -637,6 +640,70 @@ def test_53_upload_contract_validation():
     bad_df = pd.read_csv(io.StringIO(csv_text), encoding="utf-8-sig")
     r4 = contract.validate_tables({**d, "invoices": bad_df})
     assert not r4["ok"] and any("非数值" in e for e in r4["errors"]), r4
+
+
+def test_54_evidence_suggestion_layering():
+    d = generate_data.build_scenario("lotus")
+    hits = rules.run_all(d["company_profile"], d["invoices"], d["fund_flows"], d["contracts"])
+    r804 = rule(hits, "R804")
+    assert "后果测算" not in r804["evidence"], r804
+    assert "涉及金额" in r804["evidence"], r804
+    assert "后果测算" in r804["suggestion"] and "核验清单" in r804["suggestion"], r804
+
+    parts = tools.split_advice(r804["suggestion"])
+    assert len(parts) == 3, parts
+    assert "10%扣除率约 180 万元）" in parts[0], parts
+    assert parts[1].startswith("核验清单") and parts[2].startswith("纠正路径"), parts
+
+
+def test_55_red_reversal_and_income_coverage():
+    d = generate_data.build_scenario("risk")
+    hits = rules.run_all(d["company_profile"], d["invoices"], d["fund_flows"], d["contracts"])
+    r105 = rule(hits, "R105")
+    assert r105["hit"] and "红字发票合计超过对应销项" in r105["evidence"], r105
+    assert "后果测算" in r105["suggestion"] and "核验清单" in r105["suggestion"], r105
+    assert "R204" not in {h["rule_id"] for h in hits}, "星城制造有 XS300 覆盖，R204 不应命中（防误报）"
+
+
+def test_56_high_tech_rd_ratio_hint():
+    d = generate_data.build_scenario("solar")
+    hits = rules.run_all(d["company_profile"], d["invoices"], d["fund_flows"], d["contracts"])
+    r606 = rule(hits, "R606")
+    assert r606["hit"] and r606["level"] == "低", r606
+    assert "贴近认定档位" in r606["evidence"], r606
+    assert "科技部门" in r606["suggestion"] and "不作资格判定" in r606["suggestion"], r606
+
+
+def test_57_non_deductible_and_fuel_presumption():
+    d = generate_data.build_scenario("risk")
+    hits = rules.run_all(d["company_profile"], d["invoices"], d["fund_flows"], d["contracts"])
+    r104 = rule(hits, "R104")
+    assert "不得抵扣" in r104["evidence"] and "转出" in r104["suggestion"], r104
+    d2 = generate_data.build_scenario("fuel")
+    hits2 = rules.run_all(d2["company_profile"], d2["invoices"], d2["fund_flows"], d2["contracts"])
+    r802 = rule(hits2, "R802")
+    assert "推定" in r802["suggestion"] and "不构成应补税金额" in r802["suggestion"], r802
+
+
+def test_58_clean_answer_handles_hidden_separators():
+    dirty = "a\r\n\r\nb\u2028c\u2029d\x85e\n\u3000\nf"
+    clean = agent._clean_answer(dirty)
+    assert clean == "a\nb\nc\nd\ne\nf", repr(clean)
+
+
+def test_59_no_service_offer_ending():
+    ans = agent._clean_answer(
+        "结论：高风险。\n以上为演示模拟数据，非真实企业。如需正式报告文件，请提供输出格式要求。"
+    )
+    assert "请提供" not in ans and "如需" not in ans, ans
+    assert "体检报告" in ans, ans
+
+    ans2 = agent._clean_answer("结论：合规。\n如需完整书面报告可告知，我可整理成文档。")
+    assert "可告知" not in ans2 and "整理成文档" not in ans2, ans2
+    assert ans2.endswith("可预览与下载。"), ans2
+
+    ans3 = agent._clean_answer("结论：合规，无风险特征。")
+    assert ans3 == "结论：合规，无风险特征。", ans3
 
 
 def test_46_gov_source_still_tamperable():
@@ -801,6 +868,12 @@ def main():
     case(51, "离线行动建议意图（下一步/整改建议）", test_51_offline_agent_action_intent)
     case(52, "回答纯文本化：剥离Markdown标记与多余空行", test_52_answer_plain_text_no_markdown)
     case(53, "上传数据契约校验：缺列/缺表/类型错拦截", test_53_upload_contract_validation)
+    case(54, "证据与建议分层 + 括号感知行动项切分", test_54_evidence_suggestion_layering)
+    case(55, "R105 红冲倒挂 + R204 收款覆盖防误报", test_55_red_reversal_and_income_coverage)
+    case(56, "R606 高新研发费率贴线提示（科技部门边界）", test_56_high_tech_rd_ratio_hint)
+    case(57, "R104 不得抵扣量化 + 加油站推定口径", test_57_non_deductible_and_fuel_presumption)
+    case(58, "回答清洗兜底：CR/Unicode分隔符/全角空格行", test_58_clean_answer_handles_hidden_separators)
+    case(59, "结尾服务性引导剥离 + 固定报告指引替换", test_59_no_service_offer_ending)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

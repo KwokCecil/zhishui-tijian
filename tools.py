@@ -283,7 +283,6 @@ def _default_report(hits, summary, matched):
         lines.append("\n## 命中特征明细\n")
         for h in hits:
             lines.append(f"- **{h['rule_id']} [{h['level']}] {h['name']}**：{h['evidence']}")
-            lines.append(f"  - 建议：{h['suggestion']}")
     lines.append("\n## 优惠政策\n")
     usable = [m for m in matched if m["status"] in ("可享受", "需人工确认")]
     if usable:
@@ -291,8 +290,35 @@ def _default_report(hits, summary, matched):
             lines.append(f"- {m['title']}（{m['status']}）：{m['doc_number']}")
     else:
         lines.append("- 未匹配到可关注政策。")
+    if hits:
+        lines.append("\n## 行动建议\n")
+        seen = set()
+        idx = 0
+        for h in sorted(hits, key=lambda x: {"高": 0, "中": 1, "低": 2, "提示": 3}.get(x["level"], 9)):
+            for s in split_advice(h["suggestion"]):
+                if s and s not in seen:
+                    seen.add(s)
+                    idx += 1
+                    lines.append(f"{idx}. [{h['rule_id']}] {s}")
     lines.append("\n> 演示口径：判定由规则完成；LLM 仅做报告表达。生产环境需校准阈值。")
     return "\n".join(lines)
+
+
+def split_advice(suggestion):
+    """把建议文本按分号切分为独立行动项；括号内的分号不算分隔符。"""
+    parts, buf, depth = [], "", 0
+    for ch in str(suggestion):
+        if ch in "（(":
+            depth += 1
+        elif ch in "）)":
+            depth = max(0, depth - 1)
+        if ch == "；" and depth == 0:
+            parts.append(buf)
+            buf = ""
+        else:
+            buf += ch
+    parts.append(buf)
+    return [p.strip() for p in parts if p.strip()]
 
 
 REPORT_SYSTEM_PROMPT = (
@@ -315,13 +341,13 @@ REPORT_TEMPLATE = """# 智税体检报告
 （表格：指数 / 等级 / 高危·中危·低危命中数 / 可关注政策数）
 
 ## 三、命中特征
-（表格：编号 / 名称 / 级别 / 证据 / 建议；组合规则单列并注明构成）
+（表格：编号 / 名称 / 级别 / 证据；组合规则单列并注明构成。此节只写事实发现，建议统一放第五节）
 
 ## 四、政策机会
 （可享受、需人工确认分别列出，带文号与下一步）
 
 ## 五、行动建议
-（按优先级编号列表，企业自查动作）
+（按优先级编号列表：后果量化与自查动作、核验清单、纠正路径；企业自查视角）
 
 ## 六、免责声明
 （演示口径：阈值与权重为演示值，生产环境需校准；数据均为模拟）"""

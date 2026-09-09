@@ -167,9 +167,11 @@ def chat_html(history):
     for role, content in history:
         align = "right" if role == "user" else "left"
         cls = "bubble-user" if role == "user" else "bubble-assistant"
+        lines = [ln.strip() for ln in html_lib.escape(str(content)).split("\n") if ln.strip()]
+        body = "<br>".join(lines)
         items.append(
             f'<div style="text-align:{align};margin:8px 0;">'
-            f'<div class="{cls}">{html_lib.escape(content)}</div></div>'
+            f'<div class="{cls}">{body}</div></div>'
         )
     return (
         "<style>"
@@ -185,14 +187,19 @@ def chat_html(history):
 
 with st.sidebar:
     st.header("数据源")
+
+    def _reset_conversation():
+        """切换数据源时清空旧案例的对话与轨迹，避免张冠李戴。"""
+        for k in ("chat_history", "pending_prompt", "last_trace", "last_mode"):
+            st.session_state.pop(k, None)
+
     mode = st.radio("选择方式", ["内置演示场景", "上传 CSV（进阶）"], index=0)
     for key in ("data", "scenario", "report"):
         if key not in st.session_state:
             st.session_state[key] = None
     if mode == "内置演示场景":
         keys = list(generate_data.SCENARIOS)
-        default_idx = keys.index(st.session_state["scenario"]) if st.session_state["scenario"] in keys else 0
-        scenario = st.selectbox("场景", keys, index=default_idx)
+        scenario = st.selectbox("场景", keys, key="scenario_select")
         st.caption({
             "clean": "对照组 · 低风险",
             "risk": "软件企业 · 混合风险",
@@ -200,11 +207,22 @@ with st.sidebar:
             "solar": "光伏设备 · 小微临界",
             "lotus": "莲子加工 · 收购凭证",
         }[scenario])
+        if st.session_state.get("scenario") != scenario:
+            st.session_state["scenario"] = scenario
+            st.session_state["data"] = None
+            st.session_state["report"] = None
+            _reset_conversation()
         if st.button("生成并体检", type="primary"):
             st.session_state["data"] = generate_data.build_scenario(scenario)
             st.session_state["scenario"] = scenario
             st.session_state["report"] = None
+            _reset_conversation()
     else:
+        if st.session_state.get("scenario"):
+            st.session_state["data"] = None
+            st.session_state["scenario"] = None
+            st.session_state["report"] = None
+            _reset_conversation()
         with st.expander("📄 先下载 CSV 模板（含 2 行示例，对照填数即可）"):
             for key, (label, _cols, req) in contract.TABLE_CONTRACTS.items():
                 mark = "必传" if req else "可选"
@@ -263,10 +281,13 @@ if mode == "内置演示场景" and scenario:
     )
 
 if data is None:
-    st.markdown(
-        "**使用说明**：左侧选择场景或上传 CSV；页面输出风险画像、政策机会与行动建议。"
-        "规则判断可溯源，模型只负责报告与对话。"
-    )
+    if mode == "内置演示场景" and scenario:
+        st.info("已加载场景说明。点击左侧『生成并体检』运行体检，输出风险画像、政策机会与行动建议。")
+    else:
+        st.markdown(
+            "**使用说明**：左侧选择场景或上传 CSV；页面输出风险画像、政策机会与行动建议。"
+            "规则判断可溯源，模型只负责报告与对话。"
+        )
     st.stop()
 
 if "company_profile" not in data or data["company_profile"] is None:
@@ -351,16 +372,14 @@ for h in combo_hits:
     )
     st.markdown(
         f'<div class="row">{level_pill(h["level"])}<b>{h["rule_id"]} {h["name"]}</b>'
-        f'<span class="muted">组合规则 · 构成 {hit_deps}</span><br>'
-        f'<span class="cond">建议：{de_paren(h["suggestion"])}</span>{sub_lines}</div>',
+        f'<span class="muted">组合规则 · 构成 {hit_deps}</span>{sub_lines}</div>',
         unsafe_allow_html=True,
     )
 
 for h in standalone:
     st.markdown(
         f'<div class="row">{level_pill(h["level"])}<b>{h["rule_id"]} {h["name"]}</b><br>'
-        f'<span class="cond">证据：{de_paren(h["evidence"])}</span><br>'
-        f'<span class="cond">建议：{de_paren(h["suggestion"])}</span></div>',
+        f'<span class="cond">证据：{de_paren(h["evidence"])}</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -403,7 +422,7 @@ for title, lvl in grouped:
     seen = set()
     for h in hits:
         if h["level"] == lvl:
-            for s in h["suggestion"].split("；"):
+            for s in tools.split_advice(h["suggestion"]):
                 s = de_paren(s).strip()
                 if s and s not in seen:
                     seen.add(s)
@@ -533,6 +552,8 @@ with st.container(border=True):
         st.session_state["chat_history"].append(("assistant", result["answer"]))
         st.session_state["last_trace"] = result.get("trace") or []
         st.session_state["last_mode"] = result.get("mode", "")
+        if result.get("kind") == "report" and result.get("report_payload"):
+            st.session_state["report"] = result["report_payload"]
         st.rerun()
 
     prompt = st.chat_input("问它，例如：这家公司有什么风险？")
@@ -590,4 +611,4 @@ else:
             _plain_box("② 规则引擎 + 大模型（本产品路径）", agent_result["answer"], "#86efac")
 
 
-st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。")
+st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。 · build 2026-09-09")

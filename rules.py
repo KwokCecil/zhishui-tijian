@@ -32,6 +32,7 @@ ABNORMAL_STATUS = {"非正常户", "走逃失联"}
 SERVICE_ITEMS = ("咨询费", "服务费", "管理费")
 UNRELATED_INPUT_KEYWORDS = ("餐饮", "住宿", "娱乐", "礼品", "广告", "旅游")
 TECH_SALE_KEYWORDS = ("软件", "信息技术", "技术开发", "系统")
+NON_DEDUCTIBLE_KEYWORDS = ("餐饮", "娱乐", "居民日常", "旅游", "贷款服务")
 
 EXTERNAL_DOC_COLS = ["单据号", "供应商", "品名", "数量", "单位", "金额(元)", "日期", "来源方"]
 DATA_SOURCE_COLS = ["数据源", "来源方", "可否篡改", "版本", "留存月数", "可信度"]
@@ -161,6 +162,19 @@ def check_r04(invoices):
     sale_is_tech = any(k in "".join(sale_items) for k in TECH_SALE_KEYWORDS)
     inputs_unrelated = all(any(k in item for k in UNRELATED_INPUT_KEYWORDS) for item in input_items)
     if sale_is_tech and inputs_unrelated and not (sale_items & input_items):
+        non_deduct = inputs[
+            inputs["品名"].astype(str).apply(lambda x: any(k in str(x) for k in NON_DEDUCTIBLE_KEYWORDS))
+        ]
+        vat = float(non_deduct["税额(元)"].apply(_num).sum()) if not non_deduct.empty else 0.0
+        if vat > 0:
+            return _rule(
+                "R104", "进销项品名不匹配", True, "高",
+                f"销项品名 {sorted(sale_items)}，进项品名 {sorted(input_items)}，语义无关；"
+                f"其中餐饮/娱乐等法定不得抵扣品目的进项税额合计约 {vat/10000:.0f} 万元",
+                f"后果测算：财税〔2016〕36号第二十七条规定餐饮、娱乐等服务进项不得抵扣，"
+                f"若已申报抵扣应做进项税额转出约 {vat/10000:.0f} 万元；"
+                "自查进项业务实质：核实是否用于生产经营，有无集体福利/个人消费情形。",
+            )
         return _rule(
             "R104", "进销项品名不匹配", True, "高",
             f"销项品名 {sorted(sale_items)}，进项品名 {sorted(input_items)}，语义无关",
@@ -281,6 +295,65 @@ def check_r203(fund_flows):
             "核查回流资金对应的业务实质，是否构成资金回流闭环。",
         )
     return _rule("R203", "资金回流", False, "中", "未发现资金回流", "")
+
+
+def check_r204(invoices, fund_flows):
+    """R204 收款无销项覆盖：收款对象在销项发票中查无对应开票（按对方名称匹配）。"""
+    if fund_flows.empty:
+        return _rule("R204", "收款无销项覆盖", False, "中", "无资金流水数据", "")
+    sale_names = set()
+    if not invoices.empty and "发票类型" in invoices.columns:
+        sales = invoices[invoices["发票类型"] == "销项发票"]
+        sale_names = {str(x).strip() for x in sales["对方名称"].dropna()}
+    flows = fund_flows.copy()
+    flows["金额(元)"] = flows["金额(元)"].apply(_num)
+    incomes = flows[flows["收付方向"].astype(str).str.contains("收入|收款|收", na=False)]
+    agg = {}
+    for _, row in incomes.iterrows():
+        name = str(row.get("对方名称", "")).strip()
+        if name and name not in sale_names:
+            agg[name] = agg.get(name, 0.0) + float(row["金额(元)"])
+    if agg:
+        detail = "；".join(f"{n} 收款{a/10000:.0f}万" for n, a in list(agg.items())[:3])
+        total = sum(agg.values())
+        evidence = f"存在收款但查无对应销项发票的对象：{detail}，合计 {total/10000:.1f} 万元"
+        suggestion = (
+            f"后果测算：无销项覆盖的收款合计约 {total/10000:.1f} 万元，若属已实现销售存在未申报风险；"
+            "核验清单：合同履行与交付凭证、该对象全部开票情况（含未开票收入申报）；"
+            "纠正路径：属已实现销售的应补开补报，属往来款项的留存证明备查。"
+        )
+        return _rule("R204", "收款无销项覆盖", True, "中", evidence, suggestion)
+    return _rule("R204", "收款无销项覆盖", False, "中", "收款对象均有销项发票覆盖", "")
+
+
+def check_r105(invoices):
+    """R105 红冲金额与原票倒挂：同一对方红字发票合计超过销项发票合计。"""
+    if invoices.empty or "发票类型" not in invoices.columns:
+        return _rule("R105", "红冲金额超过原票", False, "中", "无发票数据", "")
+    inv = invoices.copy()
+    inv["金额(元)"] = inv["金额(元)"].apply(_num)
+    reds = inv[inv["发票类型"] == "红字发票"]
+    if reds.empty:
+        return _rule("R105", "红冲金额超过原票", False, "中", "无红字发票", "")
+    sales = inv[inv["发票类型"] == "销项发票"]
+    sales_sum = sales.groupby(sales["对方名称"].astype(str).str.strip())["金额(元)"].sum()
+    red_sum = reds.groupby(reds["对方名称"].astype(str).str.strip())["金额(元)"].sum()
+    offenders = []
+    for name, rsum in red_sum.items():
+        bsum = float(sales_sum.get(name, 0.0))
+        if rsum > bsum:
+            offenders.append((name, float(rsum), bsum))
+    if offenders:
+        detail = "；".join(f"{n} 红字{r/10000:.0f}万 > 销项{b/10000:.0f}万" for n, r, b in offenders[:3])
+        total_over = sum(r - b for _, r, b in offenders)
+        evidence = f"红字发票合计超过对应销项合计：{detail}（超挂差额约 {total_over/10000:.1f} 万元）"
+        suggestion = (
+            f"后果测算：异常冲销差额约 {total_over/10000:.1f} 万元，若已冲减销项需核实红冲依据；"
+            "核验清单：红冲对应原票、业务终止凭证、资金退回记录；"
+            "纠正路径：无真实红冲依据的不得冲减，已冲减的应更正申报。"
+        )
+        return _rule("R105", "红冲金额超过原票", True, "中", evidence, suggestion)
+    return _rule("R105", "红冲金额超过原票", False, "中", "红字金额均未超过对应销项", "")
 
 
 def check_r09(invoices):
@@ -453,6 +526,22 @@ def _fuel_num(profile, field):
     return _num(profile.get(field))
 
 
+def _fuel_exposure(reported, reference, price, base):
+    """加油站差异的推定口径量化：行业参考推算，仅作为核查线索，不构成应补税金额。"""
+    if reported is None or reference is None or price is None or price <= 0:
+        return base
+    ton_gap = abs(reference - reported)
+    if ton_gap <= 0:
+        return base
+    income_gap = ton_gap * 1176 * price / 10000
+    return (
+        f"{base}"
+        f"后果测算（推定口径）：按 1吨≈1176升、单价 {price:.2f}元/升 推定，"
+        f"差额销量 {ton_gap:.0f} 吨涉及收入约 {income_gap:.0f} 万元"
+        "——系行业参考推算，仅作为进一步核实的线索，不构成应补税金额，以实际核查结果为准。"
+    )
+
+
 def check_r21(profile):
     """R801 单站销售横向偏离（加油站模板）：申报销量显著偏离区域参考。"""
     reported = _fuel_num(profile, "申报销量(吨)")
@@ -467,7 +556,8 @@ def check_r21(profile):
         return _rule(
             "R801", "单站销售横向偏离", True, level,
             f"申报销量 {reported:.0f}吨 vs 区域参考 {reference:.0f}吨，偏离 {diff:.0f}%",
-            "横向比对同地段/车流条件站点；偏离过大需核实是否存在少申报，建议多源交叉验证。",
+            _fuel_exposure(reported, reference, _fuel_num(profile, "申报单价(元/升)"),
+                           "横向比对同地段/车流条件站点；偏离过大需核实是否存在少申报，建议多源交叉验证。"),
         )
     return _rule("R801", "单站销售横向偏离", False, "中", f"横向偏离 {diff:.0f}%（阈值±50%）", "")
 
@@ -490,10 +580,12 @@ def check_r22(profile):
         if base and abs(a - b) / base > 0.2:
             diffs.append(f"{label}差异{abs(a-b)/base*100:.0f}%")
     if diffs:
+        price = _fuel_num(profile, "申报单价(元/升)")
         return _rule(
             "R802", "多源数据不一致", True, "高",
             f"申报{reported:.0f}吨/设备{device:.0f}吨/测算{estimated:.0f}吨；{'；'.join(diffs)}",
-            "用供应商进油单、运单等外部来源核对三套销量数据，找出差异原因并规范记录。",
+            _fuel_exposure(reported, max(device, estimated), price,
+                           "用供应商进油单、运单等外部来源核对三套销量数据，找出差异原因并规范记录。"),
         )
     return _rule("R802", "多源数据不一致", False, "高", "三源数据两两差异≤20%", "")
 
@@ -508,10 +600,14 @@ def check_r23(profile):
         return _rule("R803", "申报单价偏离区域均价", False, "中", "区域均价为0", "")
     diff = (avg - price) / avg * 100
     if diff > 10:
+        volume = _fuel_num(profile, "申报销量(吨)")
+        income_gap = (avg - price) * volume * 1176 / 10000 if volume else 0
         return _rule(
             "R803", "申报单价偏离区域均价", True, "中",
             f"申报单价 {price:.2f}元/升 vs 区域均价 {avg:.2f}元/升，低 {diff:.0f}%",
-            "单价明显偏低需核实让利真实性；结合会员折扣、促销政策判断，防止低价开票隐匿收入。",
+            "单价明显偏低需核实让利真实性；结合会员折扣、促销政策判断，防止低价开票隐匿收入。"
+            f"后果测算（推定口径）：按区域均价推定，申报销量对应差额收入约 {income_gap:.0f} 万元"
+            "——推算仅为核查线索，不构成应补税金额，以实际核查结果为准。",
         )
     return _rule("R803", "申报单价偏离区域均价", False, "中", f"单价偏离 {diff:.0f}%（阈值10%）", "")
 
@@ -572,6 +668,39 @@ def check_r30(profile):
             "自查高企资格与加计抵减适用名单是否匹配；若不满足，主动停止享受并更正申报，避免被追缴。",
         )
     return _rule("R605", "资格-优惠不匹配", False, "高", "资格与优惠享受状态匹配", "")
+
+
+def check_r606(profile):
+    """R606 高新研发费用率贴线提示（提示级）：税务机关不作资格判定，仅就优惠享受前提提示问询。"""
+    htech = str(profile.get("是否高新技术企业", ""))
+    if htech != "是":
+        return _rule("R606", "高新研发费用率贴线", False, "低", "非高新技术企业", "")
+    rd = _num(profile.get("研发费用(万元)"))
+    revenue = _num(profile.get("营业收入(万元)"))
+    if rd is None or revenue is None or revenue <= 0:
+        return _rule("R606", "高新研发费用率贴线", False, "低", "研发费用或收入数据缺失", "")
+    ratio = rd / revenue * 100
+    if revenue < 5000:
+        threshold, tier = 5.0, "收入5,000万元以下"
+    elif revenue <= 20000:
+        threshold, tier = 4.0, "收入5,000万~2亿元"
+    else:
+        threshold, tier = 3.0, "收入2亿元以上"
+    if ratio < threshold:
+        status = f"低于认定档位要求（{tier}档要求≥{threshold:.0f}%）"
+    elif ratio <= threshold * 1.25:
+        status = f"贴近认定档位门槛（{tier}档要求≥{threshold:.0f}%）"
+    else:
+        return _rule("R606", "高新研发费用率贴线", False, "低", f"研发费用率 {ratio:.1f}%，高于档位要求", "")
+    evidence = f"研发费用 {rd:.0f} 万元占收入 {ratio:.1f}%，{status}"
+    suggestion = (
+        "提示：高新技术企业资格由科技部门认定，税务机关不掌握认定过程、不作资格判定；"
+        "本条仅为确认优惠享受前提的问询线索——建议核实研发费用归集口径与留存备查资料，"
+        "资格有效性与比例口径以认定机构为准。"
+    )
+    result = _rule("R606", "高新研发费用率贴线", True, "低", evidence, suggestion)
+    result["informational"] = True  # 提示级问询线索：展示但不进风险评分与统计
+    return result
 
 
 def check_r31(profile, invoices):
@@ -699,14 +828,19 @@ def check_r36(invoices):
         total = float(suspects["金额(元)"].apply(_num).sum())
         evidence = (
             f"{len(suspects)} 张收购发票销售方身份存疑（非自产农业生产者），对象：{names}，"
-            f"涉及金额 {total/10000:.0f} 万元；后果测算：若已申报抵扣，进项税额转出约 {total*0.09/10000:.0f} 万元"
-            "（按9%计算抵扣口径；如用于生产13%税率货物按10%扣除率测算）。"
+            f"涉及金额 {total/10000:.0f} 万元。"
+        )
+        suggestion = (
+            f"后果测算：若已申报抵扣，进项税额转出约 {total*0.09/10000:.0f} 万元"
+            "（按9%计算抵扣口径；如用于生产13%税率货物按10%扣除率约 "
+            f"{total*0.10/10000:.0f} 万元）；"
+            "核验清单：自产证明、收购现场记录、物流、付款到农户本人；"
+            "纠正路径：可要求贩子到办税服务大厅代开增值税发票补正。"
         )
         return _rule(
             "R804", "收购发票对象身份存疑", True, "高",
             evidence,
-            "农产品收购发票'自己开、自己抵'，对象必须是自产农业生产者；输出身份与业务流核验清单：自产证明、收购现场记录、物流、付款到农户本人。"
-            "纠正路径：可要求贩子到办税服务大厅代开增值税发票补正。",
+            suggestion,
         )
     return _rule("R804", "收购发票对象身份存疑", False, "高", "收购对象均为农业生产者", "")
 
@@ -753,12 +887,12 @@ def check_r38(invoices, fund_flows):
 # 规则分类与编号：R + 三位编码 = 第一位业务大类 + 后两位该类序号（R=Rule，单点规则）。
 # 只登记已实现的规则；新增规则按所属大类顺延序号，不设预留位。
 RULE_CATEGORIES = {
-    "发票与开票": ["R101", "R102", "R103", "R104"],
-    "资金与结算": ["R201", "R202", "R203"],
+    "发票与开票": ["R101", "R102", "R103", "R104", "R105"],
+    "资金与结算": ["R201", "R202", "R203", "R204"],
     "上下游与供应链": ["R301"],
     "申报与财务": ["R401", "R402"],
     "人资与信用": ["R501", "R502"],
-    "资格与优惠": ["R601", "R602", "R603", "R604", "R605"],
+    "资格与优惠": ["R601", "R602", "R603", "R604", "R605", "R606"],
     "数据质量与完整性": ["R701", "R702", "R703", "R704"],
     "行业模板": ["R801", "R802", "R803", "R804", "R805", "R806"],
     "关联与团伙": ["R901", "R902", "R903"],
@@ -843,9 +977,11 @@ _RULES = [
     ("R102", "月末集中开票", "低", check_r02),
     ("R103", "红冲/作废率过高", "中", check_r03),
     ("R104", "进销项品名不匹配", "高", check_r04),
+    ("R105", "红冲金额超过原票", "中", check_r105),
     ("R201", "三流不一致", "中", check_r06),
     ("R202", "个人账户收付款占比高", "中", check_r07),
     ("R203", "资金回流", "中", check_r203),
+    ("R204", "收款无销项覆盖", "中", check_r204),
     ("R301", "风险企业传导", "中", check_r09),
     ("R401", "增值税税负率异常", "中", check_r12),
     ("R501", "个税与社保人数不一致", "低", check_r15),
@@ -861,6 +997,7 @@ _RULES = [
     ("R902", "单一服务类品目集中", "中", check_r27),
     ("R903", "关联户贴线", "中", check_r903),
     ("R605", "资格-优惠不匹配", "高", check_r30),
+    ("R606", "高新研发费用率贴线", "低", check_r606),
     ("R701", "数据完整性异常", "中", check_r31),
     ("R702", "上游发票缺失", "中", check_r32),
     ("R703", "外部单据与本地记录不一致", "高", check_r33),
@@ -905,7 +1042,9 @@ def run_all(profile, invoices, fund_flows=None, contracts=None, external_docs=No
                 result = fn(fund_flows)
             elif rule_id == "R203":
                 result = fn(fund_flows)
-            elif rule_id in ("R101", "R102", "R103", "R104", "R301", "R902", "R804", "R805"):
+            elif rule_id == "R204":
+                result = fn(invoices, fund_flows)
+            elif rule_id in ("R101", "R102", "R103", "R104", "R105", "R301", "R902", "R804", "R805"):
                 result = fn(invoices)
             else:
                 result = fn(p)

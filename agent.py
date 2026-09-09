@@ -30,7 +30,9 @@ SYSTEM_PROMPT = (
     "13. 与税务体检无关的问题（如天气、数学、闲聊）直接说明'这不属于税务体检范围'即可，"
     "不要重复体检结果；只有用户明确要求时再提供体检摘要；\n"
     "14. 回答使用纯文本：禁止任何 Markdown 标记（加粗星号、井号标题、反引号、分隔线），"
-    "需要列表时用短横线开头，段落之间不要留空行。"
+    "需要列表时用短横线开头，段落之间不要留空行；\n"
+    "15. 回答结尾禁止任何服务性引导与反问（如'如需完整报告可告知''我可整理成文档''请提供输出格式要求''需要我继续吗'）；"
+    "涉及报告的内容直接说明：完整报告见页面'体检报告'区域，可预览与下载。"
 )
 
 TOOL_NAME_LABELS = {
@@ -81,7 +83,18 @@ def _build_report(scenario, profile, invoices, fund_flows, contracts, external_d
     report = tools.generate_report(health["hits"], health["summary"], matched)
     trace.append({"tool": "run_tax_health_check", "arguments": "{}", "ok": True, "result": health})
     trace.append({"tool": "match_policy_cards", "arguments": "{}", "ok": True, "result": matched})
-    return {"answer": report["report"], "trace": trace, "mode": report.get("mode", "offline")}
+    s = health["summary"]
+    short = (
+        f"报告已生成：风险指数 {s['score']}/100，等级 {s['level']}，命中 {s['hit_count']} 条特征。"
+        "完整报告见上方'体检报告'区域，可展开预览或下载 Markdown 文档。"
+    )
+    return {
+        "answer": short,
+        "trace": trace,
+        "mode": report.get("mode", "offline"),
+        "kind": "report",
+        "report_payload": report,
+    }
 
 
 def _sanitize_answer(text):
@@ -94,18 +107,34 @@ def _sanitize_answer(text):
 def _clean_answer(text):
     """剥掉 Markdown 标记、压缩空行与行尾空格，输出纯文本。"""
     text = _sanitize_answer(text)
+    text = (text.replace("\r\n", "\n").replace("\r", "\n")
+            .replace("\u2028", "\n").replace("\u2029", "\n").replace("\x85", "\n"))
     text = text.replace("&#x20;", "").replace("&nbsp;", " ")
     text = text.replace("**", "").replace("__", "").replace("`", "")
     text = re.sub(r"(?m)^#{1,6}\s*", "", text)
     text = re.sub(r"(?m)^(\s*)[*•]\s+", r"\1- ", text)
     text = re.sub(r"(?m)^\s*([-*_]\s*){3,}$", "", text)
-    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"[ \t\u3000]+\n", "\n", text)
+    text = re.sub(r"\n[ \t\u3000]+", "\n", text)
+    lines = [ln for ln in text.split("\n") if ln.strip(" \t\u3000")]
+    text = "\n".join(lines)
     text = re.sub(r"\n{2,}", "\n", text)
     lines = text.strip().split("\n")
-    while lines and re.search(r"(需要我|要我|是否(要|需)|要不要)[^。\n]{0,30}吗[？?]?$", lines[-1].strip()):
-        lines.pop()
+    offer_pat = re.compile(
+        r"(需要我|要我|是否(要|需)|要不要)[^。\n]{0,30}吗[？?]?$"
+        r"|(如需|如要|若需)[^。\n]{0,30}[。！!]?$"
+        r"|(请提供|可整理成|可整理为)[^。\n]{0,30}[。！!]?$"
+        r"|(可告知|请告知|可提供|请提供|可联系|请联系|欢迎咨询|可咨询)[。！!]?$"
+    )
+    pointer = None
+    while lines and offer_pat.search(lines[-1].strip()):
+        popped = lines.pop().strip()
+        if "报告" in popped:
+            pointer = "完整报告见页面'体检报告'区域，可预览与下载。"
         if lines and not lines[-1].strip():
             lines.pop()
+    if pointer:
+        lines.append(pointer)
     return "\n".join(lines).strip()
 
 

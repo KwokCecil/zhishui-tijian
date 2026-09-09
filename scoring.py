@@ -14,7 +14,7 @@ LEVEL_RANK = {"高": 3, "中": 2, "低": 1, "提示": 1}
 
 def risk_index(hits):
     """返回风险指数：未并入其他规则的特征点数之和，封顶 100。"""
-    counted = [h for h in hits if not h.get("merged_into")]
+    counted = [h for h in hits if not h.get("merged_into") and not h.get("informational")]
     return min(100, sum(RISK_POINTS.get(h.get("level", "低"), 5) for h in counted))
 
 
@@ -84,7 +84,7 @@ def top_risks(hits, n=3):
 def risk_summary(hits):
     """汇总报告所需的统计信息。"""
     score, level = risk_score(hits)
-    counted = [h for h in hits if not h.get("merged_into")]
+    counted = [h for h in hits if not h.get("merged_into") and not h.get("informational")]
     by_level = {k: 0 for k in ("高", "中", "低", "提示")}
     for h in counted:
         by_level[h.get("level", "低")] = by_level.get(h.get("level", "低"), 0) + 1
