@@ -74,7 +74,7 @@ SCENARIO_GUIDE = {
     "risk": {
         "企业画像": "长沙软件公司：收入1200万、研发300万、个税30人/社保15人、信用B级。",
         "风险种子": "税负率低、进项全餐饮、个人账户收付款、上游走逃、顶额开票、红冲30%、小微临界、集群注册。",
-        "预期结论": "高风险，约12条命中，指数封顶100。",
+        "预期结论": "高风险，约13条命中，指数封顶100。",
     },
     "fuel": {
         "企业画像": "某县国道旁加油站：年收入约3600万、资产4000万、应税所得350万，申报销量340吨，设备350吨、测算480吨，区域参考440吨。",
@@ -501,8 +501,10 @@ else:
     }
 
 
-def _ask_agent(prompt):
-    """统一 Agent 调用入口：在线失败自动降级离线。"""
+def _ask_agent(prompt, history=None):
+    """统一 Agent 调用入口：在线失败自动降级离线。history=None 时取当前会话历史（不含本轮提问）。"""
+    if history is None:
+        history = st.session_state.get("chat_history", [])[:-1]
     try:
         return agent.run_agent(
             prompt,
@@ -513,6 +515,7 @@ def _ask_agent(prompt):
             contracts=agent_data["contracts"],
             external_docs=agent_data["external_docs"],
             data_sources=agent_data["data_sources"],
+            history=history,
         )
     except Exception as exc:  # noqa: BLE001
         st.warning(f"在线模式失败：{exc}，已切换离线演示")
@@ -603,7 +606,8 @@ else:
                 )
             except Exception as exc:  # noqa: BLE001
                 pure_answer = f"调用失败：{exc}"
-            agent_result = _ask_agent(cmp_q)
+            # 对比演示按单轮处理，避免历史上下文影响对照组
+            agent_result = _ask_agent(cmp_q, history=[])
         col_a, col_b = st.columns(2)
         with col_a:
             _plain_box("① 纯大模型直接判断（无工具、无规则）", pure_answer, "#fca5a5")
@@ -611,4 +615,4 @@ else:
             _plain_box("② 规则引擎 + 大模型（本产品路径）", agent_result["answer"], "#86efac")
 
 
-st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。 · build 2026-09-09")
+st.caption("演示口径：风险阈值与权重为演示值，生产环境需校准；数据均为模拟。 · build 2026-09-11")

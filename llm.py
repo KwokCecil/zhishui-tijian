@@ -4,7 +4,7 @@
 环境变量（也可在 Streamlit secrets 中配置，app.py 会读取）：
     ZHI_SHUI_LLM_API_KEY
     ZHI_SHUI_LLM_BASE_URL  默认 https://api.deepseek.com/v1
-    ZHI_SHUI_LLM_MODEL     默认 deepseek-chat
+    ZHI_SHUI_LLM_MODEL     默认 deepseek-flash
 """
 
 import json
@@ -21,7 +21,7 @@ def config():
     return {
         "api_key": os.environ.get("ZHI_SHUI_LLM_API_KEY", ""),
         "base_url": os.environ.get("ZHI_SHUI_LLM_BASE_URL", "https://api.deepseek.com/v1").rstrip("/"),
-        "model": os.environ.get("ZHI_SHUI_LLM_MODEL", "deepseek-chat"),
+        "model": os.environ.get("ZHI_SHUI_LLM_MODEL", "deepseek-flash"),
     }
 
 
@@ -55,8 +55,12 @@ def complete(prompt, system="你是严谨的税务数字化产品专家。", tem
     return data["choices"][0]["message"]["content"]
 
 
-def chat_with_tools(messages, tools, max_turns=8):
-    """多轮 function calling 循环：模型决定调用工具→执行→回填→继续，直到给出最终回答。"""
+def chat_with_tools(messages, tools, max_turns=8, stop_tool=None):
+    """多轮 function calling 循环：模型决定调用工具→执行→回填→继续，直到给出最终回答。
+
+    返回 (content, trace, submitted)。模型调用 stop_tool（结构化回答提交工具）时立即结束循环，
+    submitted 为该次调用的参数；未调用时为 None。
+    """
     cfg = config()
     if not cfg["api_key"]:
         raise LLMError("未配置 ZHI_SHUI_LLM_API_KEY")
@@ -86,7 +90,7 @@ def chat_with_tools(messages, tools, max_turns=8):
         payload_messages.append(message)
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
-            return message.get("content") or "", trace
+            return message.get("content") or "", trace, None
         for call in tool_calls:
             fn = call["function"]
             key = (fn["name"], fn.get("arguments", "{}"))
@@ -107,6 +111,8 @@ def chat_with_tools(messages, tools, max_turns=8):
                 "ok": ok,
                 "result": result,
             })
+            if stop_tool and fn["name"] == stop_tool and ok:
+                return "", trace, result
             payload_messages.append({
                 "role": "tool",
                 "tool_call_id": call["id"],
@@ -133,7 +139,7 @@ def chat_with_tools(messages, tools, max_turns=8):
     content = resp.json()["choices"][0]["message"].get("content") or ""
     if not content.strip():
         raise LLMError(f"工具调用超过 {max_turns} 轮，且强制收尾未返回内容")
-    return content.strip(), trace
+    return content.strip(), trace, None
 
 
 def _run_tool(name, arguments):

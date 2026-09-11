@@ -75,7 +75,7 @@ def tool(name, description, parameters, required):
     "run_tax_health_check",
     "对企业进行税务健康检查。内置演示场景只需传 scenario=场景名（先调 load_scenario），"
     "上传数据场景传 scenario='upload'，不要手工复制完整数据。"
-    "运行 30 条原子规则 + 5 条组合规则，返回命中特征清单、风险指数、风险等级和监管视角 Top3。",
+    "运行 33 条原子规则 + 5 条组合规则，返回命中特征清单、风险指数、风险等级和监管视角 Top3。",
     {
         "type": "object",
         "properties": {
@@ -351,6 +351,49 @@ REPORT_TEMPLATE = """# 智税体检报告
 
 ## 六、免责声明
 （演示口径：阈值与权重为演示值，生产环境需校准；数据均为模拟）"""
+
+
+@tool(
+    "submit_answer",
+    "提交最终的结构化回答。对话回答必须通过本工具提交，不要用自由文本作答。"
+    "conclusion 一句话结论；facts 事实发现，每条以规则编号开头（如 'R104'），"
+    "内容由系统按规则库填充、不要自己写证据与建议；actions 企业自查动作；"
+    "need_info 只放确需用户补充的数据项。多轮对话中不要重复前几轮已给过的内容。",
+    {
+        "type": "object",
+        "properties": {
+            "conclusion": {
+                "type": "string",
+                "description": "一句话结论：风险指数、等级或关键判断",
+            },
+            "facts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "事实发现，每条以规则编号开头（系统会按规则库填充证据）；"
+                               "不建议自己展开证据与后果测算；非规则类事实（如政策条件）可直接描述",
+            },
+            "actions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "下一步动作，企业自查视角（核对、留证、补正、咨询）",
+            },
+            "need_info": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "确需用户补充的数据项，如 ['发票明细']；没有则空数组",
+            },
+        },
+        "required": ["conclusion"],
+    },
+    ["conclusion"],
+)
+def submit_answer(conclusion, facts=None, actions=None, need_info=None):
+    return {
+        "conclusion": conclusion,
+        "facts": facts or [],
+        "actions": actions or [],
+        "need_info": need_info or [],
+    }
 
 
 @tool(

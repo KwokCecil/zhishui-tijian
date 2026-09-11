@@ -581,9 +581,8 @@ def test_49_answer_sanitized_no_tool_names():
     assert "小微资格判定" in clean and "优惠政策匹配" in clean, clean
     assert "run_tax_health_check" not in agent._clean_answer("run_tax_health_check 结果正常"), clean
     assert agent._clean_answer("a\n\n\n\nb") == "a\nb", agent._clean_answer("a\n\n\n\nb")
-    assert agent._clean_answer("结论：合规。\n需要我生成完整体检报告吗？") == (
-        "结论：合规。\n完整报告见页面'体检报告'区域，可预览与下载。"
-    )
+    # 报告指引由页面常驻区域承担，清洗器只做减法、不再注入替代文案
+    assert agent._clean_answer("结论：合规。\n需要我生成完整体检报告吗？") == "结论：合规。"
 
 
 def test_50_offtopic_and_report_intent():
@@ -691,19 +690,242 @@ def test_58_clean_answer_handles_hidden_separators():
     assert clean == "a\nb\nc\nd\ne\nf", repr(clean)
 
 
-def test_59_no_service_offer_ending():
+def test_59_service_tail_trimmed_at_sentence_level():
+    """尾句清洗按句子级裁剪：只删服务性尾句，同行结论必须保留。"""
     ans = agent._clean_answer(
         "结论：高风险。\n以上为演示模拟数据，非真实企业。如需正式报告文件，请提供输出格式要求。"
     )
     assert "请提供" not in ans and "如需" not in ans, ans
-    assert "体检报告" in ans, ans
+    assert "结论：高风险。" in ans and "非真实企业" in ans, ans
 
-    ans2 = agent._clean_answer("结论：合规。\n如需完整书面报告可告知，我可整理成文档。")
-    assert "可告知" not in ans2 and "整理成文档" not in ans2, ans2
-    assert ans2.endswith("可预览与下载。"), ans2
+    ans2 = agent._clean_answer("风险指数 100，等级高风险。如需完整报告可告知。")
+    assert ans2 == "风险指数 100，等级高风险。", repr(ans2)
 
-    ans3 = agent._clean_answer("结论：合规，无风险特征。")
-    assert ans3 == "结论：合规，无风险特征。", ans3
+    ans3 = agent._clean_answer("风险指数 100。需要我整理成文档吗？")
+    assert ans3 == "风险指数 100。", repr(ans3)
+
+    ans4 = agent._clean_answer("结论：合规，无风险特征。")
+    assert ans4 == "结论：合规，无风险特征。", repr(ans4)
+
+
+def test_60_service_tail_keeps_actionable_content():
+    """业务可执行内容不得被误判为服务话术：要补数据、要咨询、有编号金额一律保留。"""
+    kept = agent._clean_answer("数据缺失，请提供完整的发票明细后重跑。")
+    assert kept == "数据缺失，请提供完整的发票明细后重跑。", repr(kept)
+
+    kept2 = agent._clean_answer("建议与主管税务机关核实，请联系12366。")
+    assert kept2 == "建议与主管税务机关核实，请联系12366。", repr(kept2)
+
+    kept3 = agent._clean_answer("如需享受小微低税率，需同时满足人数、资产、所得三项条件。")
+    assert kept3 == "如需享受小微低税率，需同时满足人数、资产、所得三项条件。", repr(kept3)
+
+    kept4 = agent._clean_answer(
+        "风险指数 100。\n- R605 资格-优惠不匹配：涉及金额 60 万元。\n如需进一步说明可告知。"
+    )
+    assert kept4 == "风险指数 100。\n- R605 资格-优惠不匹配：涉及金额 60 万元。", repr(kept4)
+
+
+def test_61_clean_answer_never_returns_empty():
+    """清洗只做减法且有兜底：非空输入不得被清成空回答（否则页面出现空气泡）。"""
+    for raw in (
+        "如需完整报告可告知。",
+        "需要我整理成文档吗？",
+        "如需继续追问，随时告诉我。\n需要我继续吗？",
+        "如需完整报告可告知。\n\n",
+    ):
+        out = agent._clean_answer(raw)
+        assert out.strip(), f"非空输入被清成空回答: {raw!r}"
+
+
+def test_62_llm_empty_answer_falls_back_to_rules():
+    """在线模式返回空内容时降级到规则引擎回答，不把空白气泡给用户。"""
+    class _StubLLM:
+        @staticmethod
+        def available():
+            return True
+
+        @staticmethod
+        def chat_with_tools(messages, tools, max_turns=8, stop_tool=None):
+            return "", [{
+                "tool": "run_tax_health_check", "arguments": "{}", "ok": True,
+                "result": {"summary": {"score": 60, "level": "高风险", "hit_count": 2,
+                                       "by_level": {}, "top3": []}, "hits": []},
+            }], None
+
+    real = agent.llm
+    agent.llm = _StubLLM
+    try:
+        r = agent.run_agent("这家公司有什么风险？", scenario="solar")
+    finally:
+        agent.llm = real
+    assert r["answer"].strip(), r
+    assert "风险指数" in r["answer"], r
+
+
+def test_63_submitted_answer_renders_structured_blocks():
+    """结构化提交按 结论→事实发现→下一步→需要你补充 分层渲染。"""
+    rendered = agent._render_submitted({
+        "conclusion": "风险指数 100，等级高风险。",
+        "facts": ["R605 资格-优惠不匹配：高新资格与加计抵减同时存在"],
+        "actions": ["核对高企资质有效期与优惠备案资料"],
+        "need_info": ["发票明细", "资金流水"],
+    })
+    assert rendered.startswith("风险指数 100，等级高风险。"), rendered
+    assert "事实发现：" in rendered and "R605" in rendered, rendered
+    assert "下一步：" in rendered and "核对高企资质有效期" in rendered, rendered
+    assert rendered.endswith("需要你补充：发票明细、资金流水"), rendered
+
+    assert agent._render_submitted({"conclusion": "未命中风险特征。"}) == "未命中风险特征。"
+    assert agent._render_submitted({}) == "", "空提交不得渲染出内容"
+    assert agent._render_submitted({"conclusion": "   "}) == "", "空白结论不得渲染"
+
+
+def test_64_llm_submission_wins_over_prose():
+    """在线模式以结构化提交为准：模型自由文本里的客套话不得进入回答。"""
+    submitted = {
+        "conclusion": "风险指数 60，等级高风险。",
+        "facts": ["G001 临界调减联动：所得额距临界值 7.3 万元"],
+        "actions": [],
+        "need_info": [],
+    }
+
+    class _StubLLM:
+        @staticmethod
+        def available():
+            return True
+
+        @staticmethod
+        def chat_with_tools(messages, tools, max_turns=8, stop_tool=None):
+            assert stop_tool == agent.SUBMIT_TOOL, stop_tool
+            return (
+                "如需完整报告可告知，我可整理成文档。",
+                [
+                    {"tool": "run_tax_health_check", "arguments": "{}", "ok": True,
+                     "result": {"summary": {"score": 60, "level": "高风险", "hit_count": 2,
+                                            "by_level": {}, "top3": []}, "hits": []}},
+                    {"tool": "submit_answer", "arguments": "{}", "ok": True, "result": submitted},
+                ],
+                submitted,
+            )
+
+    real = agent.llm
+    agent.llm = _StubLLM
+    try:
+        r = agent.run_agent("这家公司有什么风险？", scenario="solar")
+    finally:
+        agent.llm = real
+    assert "如需" not in r["answer"] and "整理成文档" not in r["answer"], r["answer"]
+    assert r["answer"].startswith("风险指数 60，等级高风险。"), r["answer"]
+    assert "G001" in r["answer"], r["answer"]
+
+
+def test_65_llm_without_submission_falls_back_to_cleaned_prose():
+    """模型未走结构化提交时，回落到尾句清洗后的自由文本（B 仍然生效）。"""
+    class _StubLLM:
+        @staticmethod
+        def available():
+            return True
+
+        @staticmethod
+        def chat_with_tools(messages, tools, max_turns=8, stop_tool=None):
+            return (
+                "风险指数 100，等级高风险。如需完整报告可告知。",
+                [{"tool": "run_tax_health_check", "arguments": "{}", "ok": True,
+                  "result": {"summary": {"score": 100, "level": "高风险", "hit_count": 13,
+                                         "by_level": {}, "top3": []}, "hits": []}}],
+                None,
+            )
+
+    real = agent.llm
+    agent.llm = _StubLLM
+    try:
+        r = agent.run_agent("这家公司有什么风险？", scenario="risk")
+    finally:
+        agent.llm = real
+    assert r["answer"] == "风险指数 100，等级高风险。", repr(r["answer"])
+
+
+def test_66_action_answer_hit_count_matches_page():
+    """行动建议的命中条数口径与页面一致：组合规则算一条，构成项不重复计数。"""
+    r = agent.run_agent("这家公司下一步最重要的行动是什么", scenario="risk")
+    expected = scoring.risk_summary(tools.execute_tool(
+        "run_tax_health_check", {"scenario": "risk"})["hits"])["hit_count"]
+    assert expected == 13, expected
+    assert f"共命中 {expected} 条特征" in r["answer"], r["answer"]
+    assert "共命中 18 条" not in r["answer"], r["answer"]
+    assert "构成项" in r["answer"] and "并入组合规则" in r["answer"], r["answer"]
+
+
+def test_67_llm_receives_conversation_history():
+    """多轮对话：上一轮问答必须带给模型，否则它会机械重复上一轮内容。"""
+    captured = {}
+
+    class _StubLLM:
+        @staticmethod
+        def available():
+            return True
+
+        @staticmethod
+        def chat_with_tools(messages, tools, max_turns=8, stop_tool=None):
+            captured["messages"] = messages
+            return "", [
+                {"tool": "run_tax_health_check", "arguments": "{}", "ok": True,
+                 "result": {"summary": {"score": 100, "level": "高风险", "hit_count": 13,
+                                        "by_level": {}, "top3": []}, "hits": []}},
+            ], {"conclusion": "优先处理 G003 虚开联动。", "facts": [], "actions": ["自查业务真实性"]}
+
+    real = agent.llm
+    agent.llm = _StubLLM
+    try:
+        agent.run_agent(
+            "下一步最重要的是做什么？", scenario="risk",
+            history=[("user", "这家公司有什么风险？"),
+                     ("assistant", "风险指数 100，等级高风险，命中 13 条特征。")],
+        )
+    finally:
+        agent.llm = real
+    msgs = captured["messages"]
+    assert msgs[0]["role"] == "system", msgs
+    assert any(m["role"] == "assistant" and "命中 13 条特征" in m["content"] for m in msgs), msgs
+    assert any(m["role"] == "user" and "这家公司有什么风险" in m["content"] for m in msgs), msgs
+    assert msgs[-1]["role"] == "user" and "下一步最重要的是做什么" in msgs[-1]["content"], msgs
+
+
+def test_68_facts_rebuilt_from_rule_evidence():
+    """facts 以规则库为准：模型把建议写进 facts 时用 evidence 覆盖，编造编号直接丢弃。"""
+    hits = {"R104": {
+        "rule_id": "R104", "name": "进销项品名不匹配", "level": "高",
+        "evidence": "销项品名 ['软件服务']，进项品名 ['娱乐服务']",
+        "suggestion": "后果测算：应做进项税额转出约 60 万元",
+    }}
+    rendered = agent._render_submitted({
+        "conclusion": "风险指数 100，等级高风险。",
+        "facts": ["R104 后果测算：若已抵扣需转出约 60 万元"],
+    }, hits)
+    assert "后果测算" not in rendered, rendered
+    assert "R104 进销项品名不匹配（高）：销项品名" in rendered, rendered
+
+    dropped = agent._render_submitted({"conclusion": "结论。", "facts": ["R999 编造的风险点"]}, hits)
+    assert "R999" not in dropped, dropped
+
+    kept = agent._render_submitted(
+        {"conclusion": "结论。", "facts": ["小型微利企业四项条件全部通过"]}, hits)
+    assert "小型微利企业四项条件全部通过" in kept, kept
+
+
+def test_69_followup_does_not_repeat_previous_facts():
+    """追问时不再复述上一轮已给过的事实（同一规则编号只讲一次）。"""
+    hits = {"R605": {"rule_id": "R605", "name": "资格-优惠不匹配", "level": "高",
+                     "evidence": "非高新技术企业却享受加计抵减"}}
+    submitted = {"conclusion": "优先处理资格-优惠不匹配。", "facts": ["R605 资格存疑"],
+                 "actions": ["核对高企资格"]}
+    first = agent._render_submitted(submitted, hits)
+    assert "R605 资格-优惠不匹配" in first, first
+
+    second = agent._render_submitted(submitted, hits, already_said=first)
+    assert "非高新技术企业却享受加计抵减" not in second, second
+    assert "优先处理资格-优惠不匹配。" in second, second
+    assert "核对高企资格" in second, second
 
 
 def test_46_gov_source_still_tamperable():
@@ -873,7 +1095,17 @@ def main():
     case(56, "R606 高新研发费率贴线提示（科技部门边界）", test_56_high_tech_rd_ratio_hint)
     case(57, "R104 不得抵扣量化 + 加油站推定口径", test_57_non_deductible_and_fuel_presumption)
     case(58, "回答清洗兜底：CR/Unicode分隔符/全角空格行", test_58_clean_answer_handles_hidden_separators)
-    case(59, "结尾服务性引导剥离 + 固定报告指引替换", test_59_no_service_offer_ending)
+    case(59, "尾句清洗按句裁剪：只删服务尾句、保留同行结论", test_59_service_tail_trimmed_at_sentence_level)
+    case(60, "业务可执行内容不被误删（补数据/12366/编号金额）", test_60_service_tail_keeps_actionable_content)
+    case(61, "清洗兜底：非空输入不会被清成空回答", test_61_clean_answer_never_returns_empty)
+    case(62, "在线返回空内容 → 降级规则引擎回答", test_62_llm_empty_answer_falls_back_to_rules)
+    case(63, "结构化提交按 结论/事实/下一步/需补充 分层渲染", test_63_submitted_answer_renders_structured_blocks)
+    case(64, "结构化提交优先于自由文本（客套话不进回答）", test_64_llm_submission_wins_over_prose)
+    case(65, "未走结构化提交 → 回落尾句清洗后的自由文本", test_65_llm_without_submission_falls_back_to_cleaned_prose)
+    case(66, "行动建议命中条数与页面口径一致（组合算一条）", test_66_action_answer_hit_count_matches_page)
+    case(67, "多轮对话历史带给模型（避免机械重复）", test_67_llm_receives_conversation_history)
+    case(68, "facts 以规则库 evidence 为准（建议不入事实、编造编号丢弃）", test_68_facts_rebuilt_from_rule_evidence)
+    case(69, "追问不复述上一轮已给过的事实", test_69_followup_does_not_repeat_previous_facts)
 
     print(f"\n{'#':<3}{'用例':<52}{'结果':<6}说明")
     print("-" * 100)

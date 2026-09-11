@@ -346,7 +346,7 @@ def check_r105(invoices):
     if offenders:
         detail = "；".join(f"{n} 红字{r/10000:.0f}万 > 销项{b/10000:.0f}万" for n, r, b in offenders[:3])
         total_over = sum(r - b for _, r, b in offenders)
-        evidence = f"红字发票合计超过对应销项合计：{detail}（超挂差额约 {total_over/10000:.1f} 万元）"
+        evidence = f"红字发票合计超过对应销项合计：{detail}（红冲超原票差额约 {total_over/10000:.1f} 万元）"
         suggestion = (
             f"后果测算：异常冲销差额约 {total_over/10000:.1f} 万元，若已冲减销项需核实红冲依据；"
             "核验清单：红冲对应原票、业务终止凭证、资金退回记录；"

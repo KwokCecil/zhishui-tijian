@@ -12,7 +12,7 @@ pip install -r requirements.txt
 # 1. 生成演示数据（clean/risk/fuel/solar/lotus 五个场景）
 python generate_data.py --all
 
-# 2. 运行验收测试（57 条）
+# 2. 运行验收测试（66 条）
 python tests/run_tests.py
 
 # 3. 启动演示页面
@@ -33,7 +33,7 @@ zhishui-tijian/
 ├── agent.py              # Agent 对话入口（在线/离线两种模式）
 ├── app.py                # Streamlit 页面：上传/选场景 → 报告
 ├── config/policy_cards.json  # 首批政策卡片（8 张核心卡，文号待官网复核）
-├── tests/run_tests.py    # 验收用例（57 条：规则/组合/政策/工具层/Agent 行为/数据契约）
+├── tests/run_tests.py    # 验收用例（66 条：规则/组合/政策/工具层/Agent 行为/数据契约）
 └── data/                 # 生成的模拟数据
 ```
 
@@ -52,6 +52,7 @@ LLM 只负责理解意图、决定调用哪个工具、把事实组织成回答�
 | answer_policy_question | query | 未收录政策的统一拒绝（引导 12366） |
 | get_demo_scenario | clean/risk/fuel/solar/lotus | 内置场景四类数据 JSON |
 | generate_report | hits + summary + matched | Markdown 体检报告 |
+| submit_answer | conclusion + facts/actions/need_info | 结构化对话回答（结论/事实/动作/需补充数据） |
 
 两种运行模式：
 
@@ -65,7 +66,7 @@ LLM 只负责理解意图、决定调用哪个工具、把事实组织成回答�
 ```bash
 set ZHI_SHUI_LLM_API_KEY=sk-xxx
 set ZHI_SHUI_LLM_BASE_URL=https://api.deepseek.com/v1
-set ZHI_SHUI_LLM_MODEL=deepseek-chat
+set ZHI_SHUI_LLM_MODEL=deepseek-flash
 ```
 
 兼容任何 OpenAI 格式的模型服务（DeepSeek、通义、豆包、硅基流动等）。

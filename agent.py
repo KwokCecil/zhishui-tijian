@@ -31,8 +31,17 @@ SYSTEM_PROMPT = (
     "不要重复体检结果；只有用户明确要求时再提供体检摘要；\n"
     "14. 回答使用纯文本：禁止任何 Markdown 标记（加粗星号、井号标题、反引号、分隔线），"
     "需要列表时用短横线开头，段落之间不要留空行；\n"
-    "15. 回答结尾禁止任何服务性引导与反问（如'如需完整报告可告知''我可整理成文档''请提供输出格式要求''需要我继续吗'）；"
-    "涉及报告的内容直接说明：完整报告见页面'体检报告'区域，可预览与下载。"
+    "15. 对话回答必须通过 submit_answer 工具提交：conclusion 一句话结论，facts 事实发现"
+    "（每条以规则编号开头，如 'R104 进销项不匹配'；事实内容由系统按规则库填充，你只给编号），"
+    "actions 企业自查动作，need_info 只放确需用户补充的数据项（没有就空数组）；\n"
+    "16. 不要重复：这是多轮对话，前几轮已经给过的事实、结论、建议不要再讲一遍，也不要换个说法重述；\n"
+    "17. 追问按需裁剪：用户问'下一步/最优先/最重要/怎么办'时，conclusion 直接给优先级判断，"
+    "actions 只给 3 条以内当务之急，facts 最多 2 条且只放本轮新增的支撑；只有首次概览才给 5 条以内事实；\n"
+    "18. 不要在自由文本里重复结论，也不要写任何服务性引导或反问"
+    "（如'如需完整报告可告知''我可整理成文档''需要我继续吗'）；"
+    "完整报告由页面'体检报告'区域提供，无需在回答里说明；\n"
+    "19. 不做法律后果定性：禁止出现'刑事''犯罪''违法定性''罚款倍数''补税金额'等表述与处罚测算；"
+    "后果一律按规则库给定的演示口径复述，处置只写企业自查动作（核对、留证、补正、咨询）。"
 )
 
 TOOL_NAME_LABELS = {
@@ -43,7 +52,11 @@ TOOL_NAME_LABELS = {
     "get_demo_scenario": "场景数据",
     "generate_report": "报告生成",
     "answer_policy_question": "政策问答",
+    "submit_answer": "结构化回答提交",
 }
+
+# 结构化回答提交工具：模型调用它即结束本轮对话，避免自由文本尾部出现客套话/反问
+SUBMIT_TOOL = "submit_answer"
 
 OFFTOPIC_KEYWORDS = (
     "天气", "几点", "时间", "1+1", "数学", "你是谁", "名字",
@@ -104,6 +117,62 @@ def _sanitize_answer(text):
     return text
 
 
+SENTENCE_BOUND = "。！？；!?;\n"
+SERVICE_INVITE = (
+    "如需", "如要", "若需", "如果需要", "需要我", "要我", "我可以", "可为你",
+    "要不要", "是否要", "是否需要", "随时", "欢迎", "可否", "能否",
+)
+SERVICE_ACTION = (
+    "告知", "告诉", "联系", "咨询", "继续", "追问", "整理", "生成", "导出",
+    "下载", "查看", "了解", "说明", "展开", "补充", "提供", "重跑", "再来", "试算",
+)
+SERVICE_PAYLOAD = re.compile(r"\d|R\d{3}|G\d{3}|P\d{3}|〔")
+DATA_OBJECTS = ("发票", "资金", "流水", "合同", "明细", "数据", "凭证", "报表", "申报表", "资料")
+
+
+def _is_service_tail(sentence):
+    """判断一个句子是不是纯服务性引导（邀请/客套），而非业务内容。
+
+    三个条件同时成立才算：有邀请词、有请求动作、且不含任何事实载荷。
+    宁可漏删也不误删——带编号、金额或数据请求的句子一律保留。
+    """
+    t = str(sentence).strip().strip(SENTENCE_BOUND).strip()
+    if not t or len(t) > 40:
+        return False
+    if not (any(k in t for k in SERVICE_INVITE) and any(k in t for k in SERVICE_ACTION)):
+        return False
+    if SERVICE_PAYLOAD.search(t):
+        return False
+    if any(k in t for k in DATA_OBJECTS) and any(k in t for k in ("提供", "补充", "上传")):
+        return False
+    return True
+
+
+def _strip_service_tail(text, max_sentences=2):
+    """按句子裁剪结尾的服务性引导，最多删 max_sentences 句。
+
+    两条硬约束：只做减法（不注入任何替代文案）；不把非空回答清成空。
+    报告指引改由页面常驻的"体检报告"区域承担，不再由清洗器补写。
+    """
+    s = str(text).rstrip()
+    core = s.rstrip(SENTENCE_BOUND).rstrip()
+    cut, removed = len(core), 0
+    while removed < max_sentences:
+        seg = core[:cut].rstrip(SENTENCE_BOUND).rstrip()
+        if not seg:
+            break
+        start = max(seg.rfind(c) for c in SENTENCE_BOUND) + 1
+        if start <= 0:  # 只剩一句，不再删
+            break
+        if not _is_service_tail(seg[start:]):
+            break
+        cut, removed = start, removed + 1
+    if removed == 0:
+        return s
+    trimmed = core[:cut].strip()
+    return trimmed or s
+
+
 def _clean_answer(text):
     """剥掉 Markdown 标记、压缩空行与行尾空格，输出纯文本。"""
     text = _sanitize_answer(text)
@@ -119,28 +188,88 @@ def _clean_answer(text):
     lines = [ln for ln in text.split("\n") if ln.strip(" \t\u3000")]
     text = "\n".join(lines)
     text = re.sub(r"\n{2,}", "\n", text)
-    lines = text.strip().split("\n")
-    offer_pat = re.compile(
-        r"(需要我|要我|是否(要|需)|要不要)[^。\n]{0,30}吗[？?]?$"
-        r"|(如需|如要|若需)[^。\n]{0,30}[。！!]?$"
-        r"|(请提供|可整理成|可整理为)[^。\n]{0,30}[。！!]?$"
-        r"|(可告知|请告知|可提供|请提供|可联系|请联系|欢迎咨询|可咨询)[。！!]?$"
-    )
-    pointer = None
-    while lines and offer_pat.search(lines[-1].strip()):
-        popped = lines.pop().strip()
-        if "报告" in popped:
-            pointer = "完整报告见页面'体检报告'区域，可预览与下载。"
-        if lines and not lines[-1].strip():
-            lines.pop()
-    if pointer:
-        lines.append(pointer)
+    return _strip_service_tail(text.strip())
+
+
+def _as_list(value):
+    """把模型给的字段规整成字符串列表（兼容字符串、null、列表）。"""
+    if value is None:
+        return []
+    raw = value if isinstance(value, (list, tuple)) else [value]
+    items = []
+    for item in raw:
+        t = _sanitize_answer(str(item)).strip().lstrip("-•* ").strip()
+        if t:
+            items.append(t)
+    return items
+
+
+def _hits_from_trace(trace):
+    """从工具轨迹里取出命中规则，供 facts 按规则库重建。"""
+    for t in reversed(trace or []):
+        if t.get("tool") == "run_tax_health_check" and isinstance(t.get("result"), dict):
+            hits = t["result"].get("hits")
+            if isinstance(hits, list):
+                return {h.get("rule_id"): h for h in hits if h.get("hit")}
+    return {}
+
+
+RULE_ID_AT_START = re.compile(r"^([RG]\d{3})")
+
+
+def _build_fact(text, hits_by_id, already_said_ids):
+    """facts 以规则库为准，返回渲染文本；None 表示本条应当丢弃。
+
+    带编号：用规则库 evidence 重建（模型写不出建议，也编不出编号）；
+    无编号：非规则类事实（如政策条件），原样保留。
+    """
+    m = RULE_ID_AT_START.match(text)
+    if not m:
+        return text
+    rule_id = m.group(1)
+    if rule_id in already_said_ids:
+        return None  # 上一轮已经讲过，本轮不复述
+    hit = hits_by_id.get(rule_id)
+    if not hit:
+        return None  # 规则库查无此编号：丢弃，避免编造
+    return f"{rule_id} {hit.get('name', '')}（{hit.get('level', '')}）：{hit.get('evidence', '')}"
+
+
+def _render_submitted(submitted, hits_by_id=None, already_said=""):
+    """把结构化提交渲染成回答：结论 → 事实发现 → 下一步 → 需要你补充。
+
+    渲染完全由本函数决定，模型没有自由文本的落点，因此不存在尾部客套话。
+    事实按规则库重建，建议永远进不了事实层；需要用户补充数据走 need_info 字段。
+    """
+    if not isinstance(submitted, dict):
+        return ""
+    conclusion = _sanitize_answer(str(submitted.get("conclusion") or "")).strip()
+    if not conclusion:
+        return ""
+    hits_by_id = hits_by_id or {}
+    already_said_ids = set(re.findall(r"[RG]\d{3}", str(already_said)))
+    lines = [conclusion]
+    facts = []
+    for raw in _as_list(submitted.get("facts")):
+        fact = _build_fact(raw, hits_by_id, already_said_ids) if hits_by_id else raw
+        if fact and fact not in facts:
+            facts.append(fact)
+    if facts:
+        lines.append("事实发现：")
+        lines.extend(f"- {f}" for f in facts)
+    actions = _as_list(submitted.get("actions"))
+    if actions:
+        lines.append("下一步：")
+        lines.extend(f"- {a}" for a in actions)
+    need = _as_list(submitted.get("need_info"))
+    if need:
+        lines.append("需要你补充：" + "、".join(need))
     return "\n".join(lines).strip()
 
 
 def run_agent(user_message, scenario="risk", profile=None, invoices=None, fund_flows=None, contracts=None,
-              external_docs=None, data_sources=None):
-    """返回 {"answer", "trace", "mode"}。"""
+              external_docs=None, data_sources=None, history=None):
+    """返回 {"answer", "trace", "mode"}。history 为 [(role, content)]，用于多轮上下文。"""
     if _is_offtopic(user_message):
         return {
             "answer": "这个问题不在税务体检范围内，请聚焦企业税务风险、政策优惠或申报建议。",
@@ -151,7 +280,7 @@ def run_agent(user_message, scenario="risk", profile=None, invoices=None, fund_f
         return _build_report(scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources)
     if llm.available():
         return _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts,
-                              external_docs, data_sources)
+                              external_docs, data_sources, history)
     return _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, contracts,
                               external_docs, data_sources)
 
@@ -170,7 +299,8 @@ def _load_context(scenario, profile, invoices, fund_flows, contracts, external_d
     return tools.get_demo_scenario(scenario)
 
 
-def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):
+def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contracts, external_docs,
+                   data_sources, history=None):
     if profile is not None:
         tools.set_data("upload", {
             "company_profile": profile,
@@ -186,11 +316,25 @@ def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contra
             f"当前内置场景：{scenario}；请先 load_scenario('{scenario}')，"
             f"再用 run_tax_health_check(scenario='{scenario}') 体检。"
         )
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"{context_text}\n\n用户问题：{user_message}"},
-    ]
-    answer, trace = llm.chat_with_tools(messages, tools.tool_schemas())
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # 多轮上下文：不带上一轮，模型就会把已经讲过的风险点再讲一遍
+    for role, content in (history or [])[-4:]:
+        if role in ("user", "assistant") and str(content).strip():
+            messages.append({"role": role, "content": str(content)[:800]})
+    messages.append({"role": "user", "content": f"{context_text}\n\n用户问题：{user_message}"})
+    answer, trace, submitted = llm.chat_with_tools(
+        messages, tools.tool_schemas(), stop_tool=SUBMIT_TOOL
+    )
+    # 结构化提交必须由真实工具结果支撑（排除提交工具自身），否则退回规则引擎
+    tool_ok = any(t.get("ok") and t.get("tool") != SUBMIT_TOOL for t in trace)
+    already_said = ""
+    for role, content in reversed(history or []):
+        if role == "assistant":
+            already_said = str(content)
+            break
+    rendered = _render_submitted(submitted, _hits_from_trace(trace), already_said) if tool_ok else ""
+    if rendered:
+        return {"answer": rendered, "trace": trace, "mode": "llm", "structured": submitted}
     health_ok = any(
         t.get("ok") and t.get("tool") == "run_tax_health_check"
         and "error" not in str(t.get("result"))
@@ -203,7 +347,15 @@ def _run_llm_agent(user_message, scenario, profile, invoices, fund_flows, contra
         )
         offline["answer"] = offline["answer"] + "\n在线模式未拿到有效体检结果，以上为规则引擎结果。"
         return offline
-    return {"answer": _clean_answer(answer), "trace": trace, "mode": "llm"}
+    cleaned = _clean_answer(answer)
+    if not cleaned:
+        offline = _run_offline_agent(
+            user_message, scenario, profile, invoices, fund_flows, contracts,
+            external_docs, data_sources,
+        )
+        offline["answer"] = offline["answer"] + "\n在线模式未返回有效内容，以上为规则引擎结果。"
+        return offline
+    return {"answer": cleaned, "trace": trace, "mode": "llm"}
 
 
 def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, contracts, external_docs, data_sources):
@@ -259,16 +411,25 @@ def _run_offline_agent(user_message, scenario, profile, invoices, fund_flows, co
         })
         trace.append({"tool": "run_tax_health_check", "arguments": "{}", "ok": True, "result": r})
         level_order = {"高": 0, "中": 1, "低": 2, "提示": 3}
+        # 计数口径与页面/报告一致：组合规则算一条，构成项不重复计数
+        counted = [
+            h for h in r["hits"]
+            if h.get("hit") and not h.get("merged_into") and not h.get("informational")
+        ]
+        merged_count = len([h for h in r["hits"] if h.get("merged_into")])
         active = sorted(
             (h for h in r["hits"] if h.get("hit")),
             key=lambda h: level_order.get(h.get("level", "提示"), 9),
         )
         if active:
-            lines = [f"下一步行动建议（按优先级，共命中 {len(active)} 条）："]
+            head = f"下一步行动建议（按优先级，共命中 {len(counted)} 条特征"
+            if merged_count:
+                head += f"，另有 {merged_count} 条构成项并入组合规则、不重复计数"
+            lines = [head + "）："]
             for h in active[:3]:
                 lines.append(f"- [{h['level']}] {h['rule_id']} {h['name']}：{h['suggestion']}（证据：{h['evidence']}）")
             if len(active) > 3:
-                lines.append(f"其余 {len(active) - 3} 条详见体检报告。")
+                lines.append("其余明细见体检报告。")
             answer += ("\n\n" if answer else "") + "\n".join(lines)
         elif not answer:
             answer = "未命中风险特征，暂无需整改；可进一步问：'能享受哪些优惠政策？'"
